@@ -1,3 +1,10 @@
+import {
+  ArrowRight,
+  Check,
+  FileCheck2,
+  ShieldCheck,
+} from "lucide-react";
+
 import type { TestResult } from "../types/test";
 
 interface ResultPageProps {
@@ -19,145 +26,328 @@ function ResultPage({
       ? (result.score / maxScore) * 100
       : 0;
 
-  return (
-    <div className="result-page">
-      <div className="result-container">
-        {/* =========================
-            HEADER
-        ========================== */}
+  const formattedPercentage =
+    percentage.toFixed(1);
 
-        <div className="result-header">
-          <div className="result-success-icon">
-            ✓
+  return (
+    <div className="premium-result-page">
+
+      {/* =================================================
+          TOP BAR
+      ================================================== */}
+
+      <header className="premium-result-header">
+
+        <div className="premium-result-brand">
+
+          <div className="premium-result-brand-mark">
+            <span />
+            <span />
+            <span />
           </div>
 
-          <h1>Test Submitted Successfully</h1>
+          <div>
+            <span>
+              ONLINE ASSESSMENT
+            </span>
+
+            <strong>
+              {result.testName}
+            </strong>
+          </div>
+
+        </div>
+
+        <div className="premium-result-status">
+          <Check
+            size={15}
+            strokeWidth={2.2}
+          />
+
+          <span>
+            SUBMISSION RECORDED
+          </span>
+        </div>
+
+      </header>
+
+      {/* =================================================
+          MAIN
+      ================================================== */}
+
+      <main className="premium-result-main">
+
+        {/* Hero */}
+
+        <section className="premium-result-hero">
+
+          <div className="premium-result-success-mark">
+            <Check
+              size={30}
+              strokeWidth={1.7}
+            />
+          </div>
+
+          <span className="premium-result-overline">
+            ASSESSMENT COMPLETED
+          </span>
+
+          <h1>
+            Test Submitted
+            <br />
+            Successfully
+          </h1>
 
           <p>
-            Your response has been recorded successfully.
+            Your response has been securely
+            recorded in the assessment system.
           </p>
-        </div>
 
-        {/* =========================
-            TEST INFORMATION
-        ========================== */}
+        </section>
 
-        <div className="result-info-card">
-          <div className="result-info-item">
-            <span>Test</span>
-            <strong>{result.testName}</strong>
+        {/* =================================================
+            STUDENT / TEST INFORMATION
+        ================================================== */}
+
+        <section className="premium-result-info">
+
+          <div>
+            <span>
+              TEST
+            </span>
+
+            <strong>
+              {result.testName}
+            </strong>
           </div>
 
-          <div className="result-info-item">
-            <span>Roll Number</span>
-            <strong>{result.rollNumber}</strong>
+          <div>
+            <span>
+              ROLL NUMBER
+            </span>
+
+            <strong>
+              {result.rollNumber}
+            </strong>
           </div>
 
-          <div className="result-info-item">
-            <span>Section</span>
-            <strong>{result.section}</strong>
-          </div>
-        </div>
+          <div>
+            <span>
+              SECTION
+            </span>
 
-        {/* =========================
+            <strong>
+              {result.section}
+            </strong>
+          </div>
+
+        </section>
+
+        {/* =================================================
             SCORE
-        ========================== */}
+        ================================================== */}
 
-        <div className="result-score-card">
-          <div className="score-label">
-            Your Score
+        <section className="premium-result-score">
+
+          <div className="premium-score-label">
+            FINAL SCORE
           </div>
 
-          <div className="score-value">
-            {result.score}
-            <span> / {maxScore}</span>
+          <div className="premium-score-number">
+
+            <strong>
+              {result.score}
+            </strong>
+
+            <span>
+              / {maxScore}
+            </span>
+
           </div>
 
-          <div className="score-percentage">
-            {percentage.toFixed(1)}%
+          <div className="premium-score-percentage">
+            {formattedPercentage}%
           </div>
-        </div>
 
-        {/* =========================
+          <div className="premium-score-line">
+            <div
+              style={{
+                width: `${Math.min(
+                  Math.max(
+                    percentage,
+                    0
+                  ),
+                  100
+                )}%`,
+              }}
+            />
+          </div>
+
+          <div className="premium-score-caption">
+            {result.correct} correct answers
+            out of {result.totalQuestions} questions
+          </div>
+
+        </section>
+
+        {/* =================================================
             PERFORMANCE
-        ========================== */}
+        ================================================== */}
 
-        <div className="result-performance-card">
-          <h2>Performance Summary</h2>
+        <section className="premium-performance">
 
-          <div className="performance-grid">
-            <div className="performance-item">
-              <span>Total Questions</span>
+          <div className="premium-section-title">
+
+            <div>
+              <span>
+                ASSESSMENT BREAKDOWN
+              </span>
+
+              <h2>
+                Performance Summary
+              </h2>
+            </div>
+
+            <FileCheck2
+              size={22}
+              strokeWidth={1.4}
+            />
+
+          </div>
+
+          <div className="premium-performance-grid">
+
+            <div className="premium-performance-item">
+              <span>
+                TOTAL QUESTIONS
+              </span>
+
               <strong>
                 {result.totalQuestions}
               </strong>
             </div>
 
-            <div className="performance-item">
-              <span>Attempted</span>
+            <div className="premium-performance-item">
+              <span>
+                ATTEMPTED
+              </span>
+
               <strong>
                 {result.attempted}
               </strong>
             </div>
 
-            <div className="performance-item">
-              <span>Correct</span>
+            <div className="premium-performance-item performance-correct">
+              <span>
+                CORRECT
+              </span>
+
               <strong>
                 {result.correct}
               </strong>
             </div>
 
-            <div className="performance-item">
-              <span>Wrong</span>
+            <div className="premium-performance-item performance-wrong">
+              <span>
+                WRONG
+              </span>
+
               <strong>
                 {result.wrong}
               </strong>
             </div>
 
-            <div className="performance-item">
-              <span>Unanswered</span>
+            <div className="premium-performance-item performance-unanswered">
+              <span>
+                UNANSWERED
+              </span>
+
               <strong>
                 {result.unanswered}
               </strong>
             </div>
 
-            <div className="performance-item">
-              <span>Marks / Question</span>
+            <div className="premium-performance-item">
+              <span>
+                MARKS / QUESTION
+              </span>
+
               <strong>
                 {result.marksPerQuestion}
               </strong>
             </div>
+
           </div>
-        </div>
 
-        {/* =========================
-            NOTICE
-        ========================== */}
+        </section>
 
-        <div className="result-notice">
-          <strong>Submission Recorded</strong>
+        {/* =================================================
+            RECORDED NOTICE
+        ================================================== */}
 
-          <p>
-            Your submission has been recorded in the
-            assessment system. You may now close this
-            page.
-          </p>
-        </div>
+        <section className="premium-result-notice">
 
-        {/* =========================
+          <div className="premium-notice-icon">
+            <ShieldCheck
+              size={20}
+              strokeWidth={1.5}
+            />
+          </div>
+
+          <div>
+
+            <strong>
+              Submission Recorded
+            </strong>
+
+            <p>
+              Your assessment response has been
+              recorded successfully. This attempt
+              is now complete.
+            </p>
+
+          </div>
+
+        </section>
+
+        {/* =================================================
             FINISH
-        ========================== */}
+        ================================================== */}
 
-        <div className="result-actions">
+        <div className="premium-result-actions">
+
           <button
             type="button"
-            className="primary-button"
+            className="premium-finish-button"
             onClick={onFinish}
           >
-            Finish
+            <span>
+              Finish
+            </span>
+
+            <ArrowRight
+              size={17}
+            />
           </button>
+
         </div>
-      </div>
+
+        <footer className="premium-result-footer">
+          <span>
+            Assessment completed successfully
+          </span>
+
+          <span>
+            •
+          </span>
+
+          <span>
+            You may now close this page
+          </span>
+        </footer>
+
+      </main>
+
     </div>
   );
 }

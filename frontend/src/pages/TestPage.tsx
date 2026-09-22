@@ -1,3 +1,13 @@
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  FileCheck2,
+  ShieldCheck,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -33,22 +43,40 @@ function TestPage({
   const [showSubmitModal, setShowSubmitModal] =
     useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] =
+    useState(false);
 
   const [submitError, setSubmitError] =
     useState("");
 
-  const currentQuestion = questions[currentIndex];
+  const currentQuestion =
+    questions[currentIndex];
 
   const attempted = useMemo(() => {
     return questions.filter(
-      (question) => answers[question.id]
+      (question) =>
+        Boolean(answers[question.id])
     ).length;
   }, [answers, questions]);
 
-  const unanswered = questions.length - attempted;
+  const unanswered =
+    questions.length - attempted;
 
-  const handleSelectOption = (optionKey: string) => {
+  const progressPercentage =
+    questions.length > 0
+      ? ((currentIndex + 1) /
+          questions.length) *
+        100
+      : 0;
+
+  const answeredPercentage =
+    questions.length > 0
+      ? (attempted / questions.length) * 100
+      : 0;
+
+  const handleSelectOption = (
+    optionKey: string
+  ) => {
     if (!currentQuestion || submitting) {
       return;
     }
@@ -60,24 +88,51 @@ function TestPage({
   };
 
   const goPrevious = () => {
-    if (currentIndex > 0 && !submitting) {
-      setCurrentIndex((index) => index - 1);
+    if (
+      currentIndex > 0 &&
+      !submitting
+    ) {
+      setCurrentIndex(
+        (index) => index - 1
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
     }
   };
 
   const goNext = () => {
     if (
-      currentIndex < questions.length - 1 &&
+      currentIndex <
+        questions.length - 1 &&
       !submitting
     ) {
-      setCurrentIndex((index) => index + 1);
+      setCurrentIndex(
+        (index) => index + 1
+      );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
     }
   };
 
-  const goToQuestion = (index: number) => {
-    if (!submitting) {
-      setCurrentIndex(index);
+  const goToQuestion = (
+    index: number
+  ) => {
+    if (submitting) {
+      return;
     }
+
+    setCurrentIndex(index);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const openSubmitModal = () => {
@@ -86,10 +141,12 @@ function TestPage({
   };
 
   const closeSubmitModal = () => {
-    if (!submitting) {
-      setSubmitError("");
-      setShowSubmitModal(false);
+    if (submitting) {
+      return;
     }
+
+    setSubmitError("");
+    setShowSubmitModal(false);
   };
 
   const handleSubmit = async () => {
@@ -123,12 +180,27 @@ function TestPage({
 
   if (!currentQuestion) {
     return (
-      <div className="test-page">
-        <div className="empty-state-card">
-          <h2>No Questions Available</h2>
+      <div className="premium-test-page">
+        <div className="premium-test-empty">
+          <div className="premium-empty-icon">
+            <FileCheck2
+              size={26}
+              strokeWidth={1.4}
+            />
+          </div>
+
+          <span>
+            ASSESSMENT ERROR
+          </span>
+
+          <h2>
+            No Questions Available
+          </h2>
+
           <p>
-            The test questions could not be loaded.
-            Please contact the administrator.
+            The assessment questions could not
+            be loaded. Please contact the
+            administrator.
           </p>
         </div>
       </div>
@@ -136,183 +208,373 @@ function TestPage({
   }
 
   return (
-    <div className="test-page">
-      {/* =========================
-          TEST HEADER
-      ========================== */}
+    <div className="premium-test-page">
 
-      <header className="test-header">
-        <div className="test-header-left">
-          <div className="test-header-title">
-            <span className="institution-label">
+      {/* =================================================
+          HEADER
+      ================================================== */}
+
+      <header className="premium-test-header">
+
+        <div className="premium-test-brand">
+
+          <div className="premium-test-brand-mark">
+            <span />
+            <span />
+            <span />
+          </div>
+
+          <div>
+            <span className="premium-test-brand-small">
               ONLINE ASSESSMENT
             </span>
 
-            <h1>{testName}</h1>
+            <strong>
+              {testName}
+            </strong>
 
             {subject && (
-              <p>{subject}</p>
+              <span className="premium-test-subject">
+                {subject}
+              </span>
             )}
           </div>
+
         </div>
 
-        <div className="test-student-info">
-          <div>
-            <span>Roll Number</span>
-            <strong>{rollNumber}</strong>
-          </div>
+        <div className="premium-test-student">
 
           <div>
-            <span>Section</span>
-            <strong>{section}</strong>
+            <span>
+              ROLL NUMBER
+            </span>
+
+            <strong>
+              {rollNumber}
+            </strong>
           </div>
+
+          <div className="premium-test-student-divider" />
+
+          <div>
+            <span>
+              SECTION
+            </span>
+
+            <strong>
+              {section}
+            </strong>
+          </div>
+
         </div>
+
       </header>
 
-      {/* =========================
-          TEST CONTENT
-      ========================== */}
+      {/* =================================================
+          EXAM BODY
+      ================================================== */}
 
-      <main className="test-content">
-        <div className="test-main-column">
-          {/* Progress */}
+      <main className="premium-test-main">
 
-          <div className="test-progress-card">
-            <div className="test-progress-top">
-              <span>
-                Question {currentIndex + 1} of{" "}
-                {questions.length}
-              </span>
+        {/* =================================================
+            LEFT / QUESTION
+        ================================================== */}
 
-              <span>
-                {attempted} / {questions.length} Answered
-              </span>
+        <section className="premium-test-question-column">
+
+          {/* Progress header */}
+
+          <div className="premium-test-progress">
+
+            <div className="premium-progress-meta">
+
+              <div>
+                <span>
+                  QUESTION
+                </span>
+
+                <strong>
+                  {String(
+                    currentIndex + 1
+                  ).padStart(2, "0")}
+                  <em>
+                    {" "}
+                    /{" "}
+                    {String(
+                      questions.length
+                    ).padStart(2, "0")}
+                  </em>
+                </strong>
+              </div>
+
+              <div className="premium-progress-answered">
+                <span>
+                  ANSWERED
+                </span>
+
+                <strong>
+                  {attempted}
+                  <em>
+                    {" "}
+                    /{" "}
+                    {questions.length}
+                  </em>
+                </strong>
+              </div>
+
             </div>
 
-            <div className="test-progress-track">
+            <div className="premium-progress-track">
               <div
-                className="test-progress-fill"
+                className="premium-progress-position"
                 style={{
-                  width: `${
-                    ((currentIndex + 1) /
-                      questions.length) *
-                    100
-                  }%`,
+                  width: `${progressPercentage}%`,
+                }}
+              />
+
+              <div
+                className="premium-progress-answered-fill"
+                style={{
+                  width: `${answeredPercentage}%`,
                 }}
               />
             </div>
+
           </div>
 
           {/* Question */}
 
-          <section className="question-card">
-            <div className="question-number">
-              Question {currentIndex + 1}
+          <article className="premium-question-card">
+
+            <div className="premium-question-top">
+
+              <div className="premium-question-index">
+                <span>
+                  QUESTION
+                </span>
+
+                <strong>
+                  {String(
+                    currentIndex + 1
+                  ).padStart(2, "0")}
+                </strong>
+              </div>
+
+              <div className="premium-question-marks">
+                {marksPerQuestion}{" "}
+                {marksPerQuestion === 1
+                  ? "MARK"
+                  : "MARKS"}
+              </div>
+
             </div>
 
-            <h2 className="question-text">
-              {currentQuestion.question}
-            </h2>
+            <div className="premium-question-body">
 
-            <div className="options-list">
-              {currentQuestion.options.map(
-                (option) => {
-                  const selected =
-                    answers[currentQuestion.id] ===
-                    option.key;
+              <h1>
+                {currentQuestion.question}
+              </h1>
 
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`option-button ${
-                        selected
-                          ? "selected"
-                          : ""
-                      }`}
-                      onClick={() =>
-                        handleSelectOption(
-                          option.key
-                        )
-                      }
-                      disabled={submitting}
-                    >
-                      <span className="option-key">
-                        {option.key}
-                      </span>
+              <p className="premium-select-label">
+                SELECT ONE ANSWER
+              </p>
 
-                      <span className="option-text">
-                        {option.text}
-                      </span>
+              <div className="premium-options">
 
-                      {selected && (
-                        <span className="option-check">
-                          ✓
+                {currentQuestion.options.map(
+                  (option, index) => {
+                    const selected =
+                      answers[
+                        currentQuestion.id
+                      ] === option.key;
+
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`premium-option ${
+                          selected
+                            ? "selected"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          handleSelectOption(
+                            option.key
+                          )
+                        }
+                        disabled={submitting}
+                      >
+
+                        <span className="premium-option-number">
+                          {String(
+                            index + 1
+                          ).padStart(2, "0")}
                         </span>
-                      )}
-                    </button>
-                  );
-                }
-              )}
+
+                        <span className="premium-option-key">
+                          {option.key}
+                        </span>
+
+                        <span className="premium-option-text">
+                          {option.text}
+                        </span>
+
+                        <span className="premium-option-indicator">
+                          {selected ? (
+                            <Check
+                              size={17}
+                              strokeWidth={2}
+                            />
+                          ) : null}
+                        </span>
+
+                      </button>
+                    );
+                  }
+                )}
+
+              </div>
+
             </div>
-          </section>
+
+          </article>
 
           {/* Navigation */}
 
-          <div className="question-navigation">
+          <div className="premium-question-navigation">
+
             <button
               type="button"
-              className="secondary-button"
+              className="premium-nav-back"
               onClick={goPrevious}
               disabled={
-                currentIndex === 0 || submitting
+                currentIndex === 0 ||
+                submitting
               }
             >
-              ← Previous
+              <ChevronLeft
+                size={17}
+              />
+
+              <span>
+                Previous
+              </span>
             </button>
+
+            <div className="premium-nav-position">
+              {currentIndex + 1}
+              <span>
+                /
+              </span>
+              {questions.length}
+            </div>
 
             {currentIndex <
             questions.length - 1 ? (
               <button
                 type="button"
-                className="primary-button"
+                className="premium-nav-next"
                 onClick={goNext}
                 disabled={submitting}
               >
-                Save & Next →
+                <span>
+                  Save & Next
+                </span>
+
+                <ChevronRight
+                  size={17}
+                />
               </button>
             ) : (
               <button
                 type="button"
-                className="submit-button"
+                className="premium-nav-submit"
                 onClick={openSubmitModal}
                 disabled={submitting}
               >
-                Submit Test
+                <span>
+                  Submit Assessment
+                </span>
+
+                <ArrowRight
+                  size={17}
+                />
               </button>
             )}
+
           </div>
-        </div>
 
-        {/* =========================
-            QUESTION NAVIGATOR
-        ========================== */}
+        </section>
 
-        <aside className="question-sidebar">
-          <div className="navigator-card">
-            <div className="navigator-header">
-              <h3>Questions</h3>
+        {/* =================================================
+            RIGHT / NAVIGATOR
+        ================================================== */}
 
-              <span>
-                {attempted}/{questions.length}
-              </span>
+        <aside className="premium-test-sidebar">
+
+          <div className="premium-navigator">
+
+            <div className="premium-navigator-heading">
+
+              <div>
+                <span>
+                  NAVIGATION
+                </span>
+
+                <h2>
+                  Questions
+                </h2>
+              </div>
+
+              <div className="premium-navigator-count">
+                {attempted}
+                <span>
+                  /
+                </span>
+                {questions.length}
+              </div>
+
             </div>
 
-            <div className="question-grid">
+            {/* completion */}
+
+            <div className="premium-completion">
+
+              <div className="premium-completion-top">
+                <span>
+                  COMPLETION
+                </span>
+
+                <strong>
+                  {Math.round(
+                    answeredPercentage
+                  )}
+                  %
+                </strong>
+              </div>
+
+              <div className="premium-completion-track">
+                <div
+                  style={{
+                    width: `${answeredPercentage}%`,
+                  }}
+                />
+              </div>
+
+            </div>
+
+            {/* Question grid */}
+
+            <div className="premium-question-grid">
+
               {questions.map(
                 (question, index) => {
                   const answered =
-                    Boolean(answers[question.id]);
+                    Boolean(
+                      answers[
+                        question.id
+                      ]
+                    );
 
                   const current =
                     index === currentIndex;
@@ -322,11 +584,13 @@ function TestPage({
                       key={question.id}
                       type="button"
                       className={[
-                        "question-number-button",
+                        "premium-question-number",
                         answered
                           ? "answered"
-                          : "unanswered",
-                        current ? "current" : "",
+                          : "",
+                        current
+                          ? "current"
+                          : "",
                       ]
                         .filter(Boolean)
                         .join(" ")}
@@ -335,118 +599,237 @@ function TestPage({
                       }
                       disabled={submitting}
                     >
-                      {index + 1}
+                      {String(
+                        index + 1
+                      ).padStart(2, "0")}
                     </button>
                   );
                 }
               )}
+
             </div>
 
-            <div className="navigator-legend">
+            {/* Legend */}
+
+            <div className="premium-navigator-legend">
+
               <div>
-                <span className="legend-box answered" />
+                <span className="legend-current" />
+                Current
+              </div>
+
+              <div>
+                <span className="legend-answered" />
                 Answered
               </div>
 
               <div>
-                <span className="legend-box unanswered" />
+                <span className="legend-unanswered" />
                 Unanswered
               </div>
 
-              <div>
-                <span className="legend-box current" />
-                Current
-              </div>
             </div>
 
-            <div className="navigator-summary">
+            {/* Summary */}
+
+            <div className="premium-navigator-summary">
+
               <div>
-                <span>Attempted</span>
-                <strong>{attempted}</strong>
+                <span>
+                  ATTEMPTED
+                </span>
+
+                <strong>
+                  {attempted}
+                </strong>
               </div>
 
               <div>
-                <span>Unanswered</span>
-                <strong>{unanswered}</strong>
+                <span>
+                  REMAINING
+                </span>
+
+                <strong>
+                  {unanswered}
+                </strong>
               </div>
 
               <div>
-                <span>Total Marks</span>
+                <span>
+                  MAX MARKS
+                </span>
+
                 <strong>
                   {questions.length *
                     marksPerQuestion}
                 </strong>
               </div>
+
             </div>
+
+            <div className="premium-secure-note">
+
+              <ShieldCheck
+                size={16}
+                strokeWidth={1.5}
+              />
+
+              <span>
+                Answers are securely recorded
+                on submission.
+              </span>
+
+            </div>
+
           </div>
+
         </aside>
+
       </main>
 
-      {/* =========================
+      {/* =================================================
           SUBMIT MODAL
-      ========================== */}
+      ================================================== */}
 
       {showSubmitModal && (
-        <div className="modal-overlay">
-          <div className="submit-modal">
-            <div className="modal-icon">?</div>
+        <div
+          className="premium-submit-overlay"
+          role="dialog"
+          aria-modal="true"
+        >
 
-            <h2>Submit Test?</h2>
+          <div className="premium-submit-modal">
+
+            <div className="premium-submit-icon">
+              <CircleHelp
+                size={26}
+                strokeWidth={1.3}
+              />
+            </div>
+
+            <span className="premium-submit-overline">
+              FINAL CONFIRMATION
+            </span>
+
+            <h2>
+              Submit assessment?
+            </h2>
 
             <p>
               Please review your answers before
-              submitting. You will not be able to
-              attempt the test again after submission.
+              continuing. Once submitted, your
+              assessment will be recorded and
+              cannot be attempted again.
             </p>
 
-            <div className="submit-summary">
+            <div className="premium-submit-summary">
+
               <div>
-                <span>Total Questions</span>
-                <strong>{questions.length}</strong>
+                <span>
+                  QUESTIONS
+                </span>
+
+                <strong>
+                  {questions.length}
+                </strong>
               </div>
 
               <div>
-                <span>Attempted</span>
-                <strong>{attempted}</strong>
+                <span>
+                  ANSWERED
+                </span>
+
+                <strong>
+                  {attempted}
+                </strong>
               </div>
 
               <div>
-                <span>Unanswered</span>
-                <strong>{unanswered}</strong>
+                <span>
+                  UNANSWERED
+                </span>
+
+                <strong>
+                  {unanswered}
+                </strong>
               </div>
+
             </div>
 
-            {submitError && (
-              <div className="submit-error">
-                <strong>Submission failed</strong>
-                <span>{submitError}</span>
+            {unanswered > 0 && (
+              <div className="premium-submit-warning">
+                <strong>
+                  {unanswered}{" "}
+                  {unanswered === 1
+                    ? "question remains"
+                    : "questions remain"}{" "}
+                  unanswered.
+                </strong>
+
+                <span>
+                  You may return and review
+                  your answers before submitting.
+                </span>
               </div>
             )}
 
-            <div className="modal-actions">
+            {submitError && (
+              <div className="premium-submit-error">
+                <strong>
+                  Submission failed
+                </strong>
+
+                <span>
+                  {submitError}
+                </span>
+              </div>
+            )}
+
+            <div className="premium-submit-actions">
+
               <button
                 type="button"
-                className="secondary-button"
+                className="premium-review-button"
                 onClick={closeSubmitModal}
                 disabled={submitting}
               >
+                <ArrowLeft
+                  size={16}
+                />
+
                 Review Answers
               </button>
 
               <button
                 type="button"
-                className="submit-button"
+                className="premium-confirm-button"
                 onClick={handleSubmit}
                 disabled={submitting}
               >
-                {submitting
-                  ? "Submitting..."
-                  : "Confirm Submission"}
+                {submitting ? (
+                  <>
+                    <span className="premium-button-spinner" />
+
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    Confirm Submission
+
+                    <ArrowRight
+                      size={16}
+                    />
+                  </>
+                )}
               </button>
+
             </div>
+
           </div>
+
         </div>
       )}
+
     </div>
   );
 }
