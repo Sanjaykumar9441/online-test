@@ -1,4 +1,11 @@
 import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
+import {
   useEffect,
   useState,
   type FormEvent,
@@ -16,7 +23,9 @@ interface LoginPageProps {
   ) => void | Promise<void>;
 }
 
-function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({
+  onLogin,
+}: LoginPageProps) {
   const [rollNumber, setRollNumber] = useState("");
   const [section, setSection] = useState("");
 
@@ -28,14 +37,10 @@ function LoginPage({ onLogin }: LoginPageProps) {
     useState(true);
 
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState("");
 
-  /*
-   * Load available sections from Google Sheets.
-   */
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
     const loadSections = async () => {
       try {
@@ -51,13 +56,11 @@ function LoginPage({ onLogin }: LoginPageProps) {
           );
         }
 
-        if (mounted) {
+        if (active) {
           setSections(response.sections || []);
         }
       } catch (error) {
-        if (!mounted) {
-          return;
-        }
+        if (!active) return;
 
         setError(
           error instanceof Error
@@ -65,7 +68,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
             : "Unable to load sections."
         );
       } finally {
-        if (mounted) {
+        if (active) {
           setSectionsLoading(false);
         }
       }
@@ -74,41 +77,16 @@ function LoginPage({ onLogin }: LoginPageProps) {
     loadSections();
 
     return () => {
-      mounted = false;
+      active = false;
     };
   }, []);
 
-  /*
-   * Handle roll number input.
-   */
-  const handleRollNumberChange = (
-    value: string
-  ) => {
-    setRollNumber(value.toUpperCase());
-    setError("");
-  };
-
-  /*
-   * Handle section selection.
-   */
-  const handleSectionChange = (
-    value: string
-  ) => {
-    setSection(value.toUpperCase());
-    setError("");
-  };
-
-  /*
-   * Validate student and continue.
-   */
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
 
-    if (loading) {
-      return;
-    }
+    if (loading) return;
 
     setError("");
 
@@ -118,16 +96,13 @@ function LoginPage({ onLogin }: LoginPageProps) {
     const cleanSection =
       section.trim().toUpperCase();
 
-    /*
-     * Basic validation.
-     */
     if (!cleanRollNumber) {
-      setError("Please enter your roll number.");
+      setError("Enter your roll number.");
       return;
     }
 
     if (!cleanSection) {
-      setError("Please select your section.");
+      setError("Select your section.");
       return;
     }
 
@@ -141,10 +116,6 @@ function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
 
     try {
-      /*
-       * Validate roll number + section
-       * against Google Sheets.
-       */
       const response = await validateStudent(
         cleanRollNumber,
         cleanSection
@@ -158,22 +129,13 @@ function LoginPage({ onLogin }: LoginPageProps) {
         return;
       }
 
-      /*
-       * Prevent a student who has already
-       * submitted the test from continuing.
-       */
       if (response.alreadySubmitted) {
         setError(
-          "You have already submitted this test."
+          "You have already submitted this assessment."
         );
         return;
       }
 
-      /*
-       * App.tsx will now load the test
-       * configuration before showing
-       * the Instructions page.
-       */
       await onLogin(
         cleanRollNumber,
         cleanSection
@@ -190,123 +152,248 @@ function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="login-page">
-      <div className="login-container">
-        {/* =========================
-            HEADER
-        ========================== */}
+    <main className="luxury-login">
 
-        <div className="login-header">
-          <div className="login-logo">
-            OA
-          </div>
+      {/* ==================================================
+          BACKGROUND ARCHITECTURE
+      =================================================== */}
+
+      <div className="luxury-grid" />
+
+      <div className="luxury-cross luxury-cross-one" />
+      <div className="luxury-cross luxury-cross-two" />
+
+      {/* ==================================================
+          HEADER
+      =================================================== */}
+
+      <header className="luxury-header">
+
+        <div className="luxury-wordmark">
+          <span className="luxury-wordmark-line" />
 
           <div>
-            <span className="login-kicker">
-              ONLINE ASSESSMENT
+            <span className="luxury-wordmark-small">
+              ONLINE
             </span>
 
-            <h1>Student Login</h1>
-
-            <p>
-              Enter your registered details to
-              continue to the assessment.
-            </p>
+            <span className="luxury-wordmark-main">
+              ASSESSMENT
+            </span>
           </div>
         </div>
 
-        {/* =========================
-            LOGIN CARD
-        ========================== */}
+        <div className="luxury-header-right">
+          <span className="luxury-status-dot" />
 
-        <div className="login-card">
-          <div className="login-card-header">
-            <h2>Student Details</h2>
+          <span>
+            STUDENT PORTAL
+          </span>
+        </div>
 
-            <p>
-              Use the roll number and section
-              provided by your institution.
-            </p>
+      </header>
+
+      {/* ==================================================
+          MAIN COMPOSITION
+      =================================================== */}
+
+      <section className="luxury-main">
+
+        {/* LEFT */}
+
+        <div className="luxury-introduction">
+
+          <div className="luxury-number">
+            01
           </div>
 
-          <form
-            className="login-form"
-            onSubmit={handleSubmit}
-          >
-            {/* Roll Number */}
+          <div className="luxury-intro-content">
 
-            <div className="form-group">
-              <label htmlFor="rollNumber">
-                Roll Number
-              </label>
+            <span className="luxury-overline">
+              ASSESSMENT ACCESS
+            </span>
 
-              <input
-                id="rollNumber"
-                type="text"
-                value={rollNumber}
-                onChange={(event) =>
-                  handleRollNumberChange(
-                    event.target.value
-                  )
-                }
-                placeholder="Enter Roll Number"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                disabled={loading}
-                required
-              />
+            <h1>
+              Begin your
+              <br />
+              <span>assessment.</span>
+            </h1>
+
+            <p>
+              Access your registered assessment
+              using the academic details provided
+              by your institution.
+            </p>
+
+          </div>
+
+          <div className="luxury-bottom-info">
+
+            <div className="luxury-info-item">
+              <span>
+                ACCESS TYPE
+              </span>
+
+              <strong>
+                Registered Student
+              </strong>
             </div>
 
-            {/* Section Dropdown */}
+            <div className="luxury-info-item">
+              <span>
+                VERIFICATION
+              </span>
 
-            <div className="form-group">
-              <label htmlFor="section">
-                Section
+              <strong>
+                Institutional Records
+              </strong>
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* RIGHT */}
+
+        <div className="luxury-verification">
+
+          <div className="luxury-panel-top">
+
+            <div>
+              <span className="luxury-panel-label">
+                STUDENT VERIFICATION
+              </span>
+
+              <h2>
+                Sign in
+              </h2>
+            </div>
+
+            <div className="luxury-panel-index">
+              01
+            </div>
+
+          </div>
+
+          <p className="luxury-panel-description">
+            Enter the credentials associated with
+            your registered assessment record.
+          </p>
+
+          <div className="luxury-line" />
+
+          <form
+            className="luxury-form"
+            onSubmit={handleSubmit}
+          >
+
+            {/* Roll */}
+
+            <div className="luxury-field">
+
+              <label htmlFor="rollNumber">
+                <span>
+                  Roll Number
+                </span>
+
+                <small>
+                  REQUIRED
+                </small>
               </label>
 
-              <select
-                id="section"
-                value={section}
-                onChange={(event) =>
-                  handleSectionChange(
-                    event.target.value
-                  )
-                }
-                disabled={
-                  loading || sectionsLoading
-                }
-                required
-              >
-                <option value="">
-                  {sectionsLoading
-                    ? "Loading sections..."
-                    : "Select Section"}
-                </option>
+              <div className="luxury-input">
 
-                {sections.map((item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  >
-                    {item}
+                <input
+                  id="rollNumber"
+                  type="text"
+                  value={rollNumber}
+                  onChange={(event) => {
+                    setRollNumber(
+                      event.target.value.toUpperCase()
+                    );
+                    setError("");
+                  }}
+                  placeholder="Enter roll number"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  disabled={loading}
+                  required
+                />
+
+                <span className="luxury-input-index">
+                  01
+                </span>
+
+              </div>
+
+            </div>
+
+            {/* Section */}
+
+            <div className="luxury-field">
+
+              <label htmlFor="section">
+                <span>
+                  Section
+                </span>
+
+                <small>
+                  REQUIRED
+                </small>
+              </label>
+
+              <div className="luxury-input">
+
+                <select
+                  id="section"
+                  value={section}
+                  onChange={(event) => {
+                    setSection(
+                      event.target.value.toUpperCase()
+                    );
+                    setError("");
+                  }}
+                  disabled={
+                    loading ||
+                    sectionsLoading
+                  }
+                  required
+                >
+                  <option value="">
+                    {sectionsLoading
+                      ? "Loading sections..."
+                      : "Select section"}
                   </option>
-                ))}
-              </select>
+
+                  {sections.map((item) => (
+                    <option
+                      key={item}
+                      value={item}
+                    >
+                      {item}
+                    </option>
+                  ))}
+                </select>
+
+                <ChevronDown
+                  className="luxury-chevron"
+                  size={17}
+                />
+
+              </div>
+
             </div>
 
             {/* Error */}
 
             {error && (
               <div
-                className="login-error"
+                className="luxury-error"
                 role="alert"
               >
-                <span className="login-error-icon">
-                  !
-                </span>
-
-                <span>{error}</span>
+                <span>!</span>
+                <p>{error}</p>
               </div>
             )}
 
@@ -314,49 +401,101 @@ function LoginPage({ onLogin }: LoginPageProps) {
 
             <button
               type="submit"
-              className="primary-button login-submit-button"
+              className="luxury-submit"
               disabled={
                 loading ||
                 sectionsLoading ||
                 sections.length === 0
               }
             >
-              {loading
-                ? "Verifying..."
-                : sectionsLoading
-                ? "Loading Sections..."
-                : "Continue"}
+              <span>
+                {loading
+                  ? "VERIFYING ACCESS"
+                  : sectionsLoading
+                    ? "LOADING"
+                    : "CONTINUE TO ASSESSMENT"}
+              </span>
+
+              {loading ||
+              sectionsLoading ? (
+                <Loader2
+                  size={18}
+                  className="luxury-spinner"
+                />
+              ) : (
+                <ArrowUpRight
+                  size={19}
+                  strokeWidth={1.6}
+                />
+              )}
             </button>
+
           </form>
 
-          {/* Information */}
+          {/* Security */}
 
-          <div className="login-notice">
-            <strong>Important</strong>
+          <div className="luxury-security">
 
-            <p>
-              Please enter the same roll number and
-              section registered for this assessment.
-              Your submission is recorded against
-              your registered details.
-            </p>
+            <div className="luxury-security-symbol">
+              <ShieldCheck
+                size={18}
+                strokeWidth={1.5}
+              />
+            </div>
+
+            <div>
+              <strong>
+                Secure assessment access
+              </strong>
+
+              <p>
+                Your details are verified against
+                registered institutional records.
+              </p>
+            </div>
+
           </div>
+
+          {/* Bottom status */}
+
+          <div className="luxury-status-row">
+
+            <span>
+              <Check size={12} />
+              Registered access
+            </span>
+
+            <span>
+              <Check size={12} />
+              Secure submission
+            </span>
+
+          </div>
+
         </div>
 
-        {/* Footer */}
+      </section>
 
-        <div className="login-footer">
-          <span>
-            Online Assessment System
-          </span>
+      {/* ==================================================
+          FOOTER
+      =================================================== */}
 
-          <span>
-            Authorized Student Access
-          </span>
-        </div>
-      </div>
-    </div>
+      <footer className="luxury-footer">
+
+        <span>
+          ONLINE ASSESSMENT SYSTEM
+        </span>
+
+        <span className="luxury-footer-center">
+          SECURE • ACADEMIC • VERIFIED
+        </span>
+
+        <span>
+          2026
+        </span>
+
+      </footer>
+
+    </main>
   );
 }
-
-export default LoginPage;

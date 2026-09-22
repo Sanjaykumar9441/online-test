@@ -11,10 +11,10 @@ import type {
   TestResult,
 } from "./types/test";
 
-import  LoginPage from "./pages/LoginPage";
+import LoginPage from "./pages/LoginPage";
 import InstructionsPage from "./pages/InstructionsPage";
 import TestPage from "./pages/TestPage";
-import  ResultPage from "./pages/ResultPage";
+import ResultPage from "./pages/ResultPage";
 
 import "./App.css";
 
