@@ -5,36 +5,23 @@ import {
   Loader2,
   ShieldCheck,
 } from "lucide-react";
-import {
-  useEffect,
-  useState,
-  type FormEvent,
-} from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
-import {
-  getSections,
-  validateStudent,
-} from "../services/api";
+import { getSections, getTestConfig, validateStudent } from "../services/api";
 
 interface LoginPageProps {
-  onLogin: (
-    rollNumber: string,
-    section: string
-  ) => void | Promise<void>;
+  onLogin: (rollNumber: string, section: string) => void | Promise<void>;
 }
 
-export default function LoginPage({
-  onLogin,
-}: LoginPageProps) {
+export default function LoginPage({ onLogin }: LoginPageProps) {
   const [rollNumber, setRollNumber] = useState("");
   const [section, setSection] = useState("");
+  const [testName, setTestName] = useState("Online Assessment");
+  const [subject, setSubject] = useState("");
 
-  const [sections, setSections] = useState<string[]>(
-    []
-  );
+  const [sections, setSections] = useState<string[]>([]);
 
-  const [sectionsLoading, setSectionsLoading] =
-    useState(true);
+  const [sectionsLoading, setSectionsLoading] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,22 +29,34 @@ export default function LoginPage({
   useEffect(() => {
     let active = true;
 
-    const loadSections = async () => {
+    const loadPageData = async () => {
       try {
         setSectionsLoading(true);
         setError("");
 
-        const response = await getSections();
+        const [sectionsResponse, configResponse] = await Promise.all([
+          getSections(),
+          getTestConfig(),
+        ]);
 
-        if (!response.success) {
+        if (!sectionsResponse.success) {
           throw new Error(
-            response.message ||
-              "Unable to load sections."
+            sectionsResponse.message || "Unable to load sections.",
+          );
+        }
+
+        if (!configResponse.success) {
+          throw new Error(
+            configResponse.message || "Unable to load assessment details.",
           );
         }
 
         if (active) {
-          setSections(response.sections || []);
+          setSections(sectionsResponse.sections || []);
+
+          setTestName(configResponse.testName || "Online Assessment");
+
+          setSubject(configResponse.subject || "");
         }
       } catch (error) {
         if (!active) return;
@@ -65,7 +64,7 @@ export default function LoginPage({
         setError(
           error instanceof Error
             ? error.message
-            : "Unable to load sections."
+            : "Unable to load assessment details.",
         );
       } finally {
         if (active) {
@@ -74,27 +73,23 @@ export default function LoginPage({
       }
     };
 
-    loadSections();
+    loadPageData();
 
     return () => {
       active = false;
     };
   }, []);
 
-  const handleSubmit = async (
-    event: FormEvent<HTMLFormElement>
-  ) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (loading) return;
 
     setError("");
 
-    const cleanRollNumber =
-      rollNumber.trim().toUpperCase();
+    const cleanRollNumber = rollNumber.trim().toUpperCase();
 
-    const cleanSection =
-      section.trim().toUpperCase();
+    const cleanSection = section.trim().toUpperCase();
 
     if (!cleanRollNumber) {
       setError("Enter your roll number.");
@@ -107,44 +102,31 @@ export default function LoginPage({
     }
 
     if (sections.length === 0) {
-      setError(
-        "No sections are currently available."
-      );
+      setError("No sections are currently available.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await validateStudent(
-        cleanRollNumber,
-        cleanSection
-      );
+      const response = await validateStudent(cleanRollNumber, cleanSection);
 
       if (!response.success) {
-        setError(
-          response.message ||
-            "Invalid roll number or section."
-        );
+        setError(response.message || "Invalid roll number or section.");
         return;
       }
 
       if (response.alreadySubmitted) {
-        setError(
-          "You have already submitted this assessment."
-        );
+        setError("You have already submitted this assessment.");
         return;
       }
 
-      await onLogin(
-        cleanRollNumber,
-        cleanSection
-      );
+      await onLogin(cleanRollNumber, cleanSection);
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
-          : "Unable to connect to the assessment server."
+          : "Unable to connect to the assessment server.",
       );
     } finally {
       setLoading(false);
@@ -153,7 +135,6 @@ export default function LoginPage({
 
   return (
     <main className="luxury-login">
-
       {/* ==================================================
           BACKGROUND ARCHITECTURE
       =================================================== */}
@@ -168,29 +149,21 @@ export default function LoginPage({
       =================================================== */}
 
       <header className="luxury-header">
-
         <div className="luxury-wordmark">
           <span className="luxury-wordmark-line" />
 
           <div>
-            <span className="luxury-wordmark-small">
-              ONLINE
-            </span>
+            <span className="luxury-wordmark-small">ONLINE</span>
 
-            <span className="luxury-wordmark-main">
-              ASSESSMENT
-            </span>
+            <span className="luxury-wordmark-main">ASSESSMENT</span>
           </div>
         </div>
 
         <div className="luxury-header-right">
           <span className="luxury-status-dot" />
 
-          <span>
-            STUDENT PORTAL
-          </span>
+          <span>STUDENT PORTAL</span>
         </div>
-
       </header>
 
       {/* ==================================================
@@ -198,20 +171,19 @@ export default function LoginPage({
       =================================================== */}
 
       <section className="luxury-main">
-
         {/* LEFT */}
 
         <div className="luxury-introduction">
-
-          <div className="luxury-number">
-            01
-          </div>
+          <div className="luxury-number">01</div>
 
           <div className="luxury-intro-content">
+            <span className="luxury-overline">ASSESSMENT ACCESS</span>
 
-            <span className="luxury-overline">
-              ASSESSMENT ACCESS
-            </span>
+            <div className="luxury-assessment-title">
+              <h2>{testName}</h2>
+
+              {subject && <span>{subject}</span>}
+            </div>
 
             <h1>
               Begin your
@@ -220,97 +192,63 @@ export default function LoginPage({
             </h1>
 
             <p>
-              Access your registered assessment
-              using the academic details provided
-              by your institution.
+              Access your registered assessment using the academic details
+              provided by your institution.
             </p>
-
           </div>
 
           <div className="luxury-bottom-info">
-
             <div className="luxury-info-item">
-              <span>
-                ACCESS TYPE
-              </span>
+              <span>ACCESS TYPE</span>
 
-              <strong>
-                Registered Student
-              </strong>
+              <strong>Registered Student</strong>
             </div>
 
             <div className="luxury-info-item">
-              <span>
-                VERIFICATION
-              </span>
+              <span>VERIFICATION</span>
 
-              <strong>
-                Institutional Records
-              </strong>
+              <strong>Institutional Records</strong>
             </div>
-
           </div>
-
         </div>
 
         {/* RIGHT */}
 
         <div className="luxury-verification">
-
           <div className="luxury-panel-top">
-
             <div>
-              <span className="luxury-panel-label">
-                STUDENT VERIFICATION
-              </span>
+              <span className="luxury-panel-label">STUDENT VERIFICATION</span>
 
-              <h2>
-                Sign in
-              </h2>
+              <h2>Sign in</h2>
             </div>
 
-            <div className="luxury-panel-index">
-              01
-            </div>
-
+            <div className="luxury-panel-index">01</div>
           </div>
 
           <p className="luxury-panel-description">
-            Enter the credentials associated with
-            your registered assessment record.
+            Enter the credentials associated with your registered assessment
+            record.
           </p>
 
           <div className="luxury-line" />
 
-          <form
-            className="luxury-form"
-            onSubmit={handleSubmit}
-          >
-
+          <form className="luxury-form" onSubmit={handleSubmit}>
             {/* Roll */}
 
             <div className="luxury-field">
-
               <label htmlFor="rollNumber">
-                <span>
-                  Roll Number
-                </span>
+                <span>Roll Number</span>
 
-                <small>
-                  REQUIRED
-                </small>
+                <small>REQUIRED</small>
               </label>
 
               <div className="luxury-input">
-
                 <input
                   id="rollNumber"
                   type="text"
                   value={rollNumber}
                   onChange={(event) => {
-                    setRollNumber(
-                      event.target.value.toUpperCase()
-                    );
+                    setRollNumber(event.target.value.toUpperCase());
                     setError("");
                   }}
                   placeholder="Enter roll number"
@@ -321,77 +259,49 @@ export default function LoginPage({
                   required
                 />
 
-                <span className="luxury-input-index">
-                  01
-                </span>
-
+                <span className="luxury-input-index">01</span>
               </div>
-
             </div>
 
             {/* Section */}
 
             <div className="luxury-field">
-
               <label htmlFor="section">
-                <span>
-                  Section
-                </span>
+                <span>Section</span>
 
-                <small>
-                  REQUIRED
-                </small>
+                <small>REQUIRED</small>
               </label>
 
               <div className="luxury-input">
-
                 <select
                   id="section"
                   value={section}
                   onChange={(event) => {
-                    setSection(
-                      event.target.value.toUpperCase()
-                    );
+                    setSection(event.target.value.toUpperCase());
                     setError("");
                   }}
-                  disabled={
-                    loading ||
-                    sectionsLoading
-                  }
+                  disabled={loading || sectionsLoading}
                   required
                 >
                   <option value="">
-                    {sectionsLoading
-                      ? "Loading sections..."
-                      : "Select section"}
+                    {sectionsLoading ? "Loading sections..." : "Select section"}
                   </option>
 
                   {sections.map((item) => (
-                    <option
-                      key={item}
-                      value={item}
-                    >
+                    <option key={item} value={item}>
                       {item}
                     </option>
                   ))}
                 </select>
 
-                <ChevronDown
-                  className="luxury-chevron"
-                  size={17}
-                />
-
+                <ChevronDown className="luxury-chevron" size={17} />
               </div>
-
             </div>
 
             {/* Error */}
 
             {error && (
-              <div
-                className="luxury-error"
-                role="alert"
-              >
+              <div className="luxury-error" role="alert">
                 <span>!</span>
                 <p>{error}</p>
               </div>
@@ -402,11 +312,7 @@ export default function LoginPage({
             <button
               type="submit"
               className="luxury-submit"
-              disabled={
-                loading ||
-                sectionsLoading ||
-                sections.length === 0
-              }
+              disabled={loading || sectionsLoading || sections.length === 0}
             >
               <span>
                 {loading
@@ -416,50 +322,34 @@ export default function LoginPage({
                     : "CONTINUE TO ASSESSMENT"}
               </span>
 
-              {loading ||
-              sectionsLoading ? (
-                <Loader2
-                  size={18}
-                  className="luxury-spinner"
-                />
+              {loading || sectionsLoading ? (
+                <Loader2 size={18} className="luxury-spinner" />
               ) : (
-                <ArrowUpRight
-                  size={19}
-                  strokeWidth={1.6}
-                />
+                <ArrowUpRight size={19} strokeWidth={1.6} />
               )}
             </button>
-
           </form>
 
           {/* Security */}
 
           <div className="luxury-security">
-
             <div className="luxury-security-symbol">
-              <ShieldCheck
-                size={18}
-                strokeWidth={1.5}
-              />
+              <ShieldCheck size={18} strokeWidth={1.5} />
             </div>
 
             <div>
-              <strong>
-                Secure assessment access
-              </strong>
+              <strong>Secure assessment access</strong>
 
               <p>
-                Your details are verified against
-                registered institutional records.
+                Your details are verified against registered institutional
+                records.
               </p>
             </div>
-
           </div>
 
           {/* Bottom status */}
 
           <div className="luxury-status-row">
-
             <span>
               <Check size={12} />
               Registered access
@@ -469,11 +359,8 @@ export default function LoginPage({
               <Check size={12} />
               Secure submission
             </span>
-
           </div>
-
         </div>
-
       </section>
 
       {/* ==================================================
@@ -481,21 +368,14 @@ export default function LoginPage({
       =================================================== */}
 
       <footer className="luxury-footer">
-
-        <span>
-          ONLINE ASSESSMENT SYSTEM
-        </span>
+        <span>ONLINE ASSESSMENT SYSTEM</span>
 
         <span className="luxury-footer-center">
           SECURE • ACADEMIC • VERIFIED
         </span>
 
-        <span>
-          2026
-        </span>
-
+        <span>2026</span>
       </footer>
-
     </main>
   );
 }

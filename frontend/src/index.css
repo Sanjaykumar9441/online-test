@@ -9256,3 +9256,27 @@ button {
   }
 
 }
+
+.luxury-assessment-title {
+  margin-top: 22px;
+  margin-bottom: 20px;
+}
+
+.luxury-assessment-title h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  color: #111827;
+}
+
+.luxury-assessment-title span {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #64748b;
+}
