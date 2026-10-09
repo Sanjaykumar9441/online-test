@@ -1,22 +1,18 @@
+
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  /* =======================================================
-     METHOD CHECK
-     ======================================================= */
-
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
   if (req.method !== "POST") {
     return res.status(405).json({
       success: false,
       message: "Method not allowed.",
     });
   }
-
-  /* =======================================================
-     ENVIRONMENT VARIABLE CHECK
-     ======================================================= */
 
   if (!APPS_SCRIPT_URL) {
     console.error("APPS_SCRIPT_URL environment variable is missing.");
@@ -27,43 +23,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  /* =======================================================
-     FORWARD REQUEST TO GOOGLE APPS SCRIPT
-     ======================================================= */
+  const requestBody = req.body;
+  const action =
+    requestBody && typeof requestBody.action === "string"
+      ? requestBody.action
+      : "unknown";
+
+  const requestId = `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 
   try {
+    console.log(`[${requestId}] Incoming action: ${action}`);
+
     const response = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
-
-      // Vercel → Google Apps Script
       headers: {
         "Content-Type": "text/plain;charset=utf-8",
       },
-
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(requestBody),
+      redirect: "follow",
     });
 
     const text = await response.text();
-    if (!text.trim().startsWith("{")) {
-      console.error("Apps Script HTTP status:", response.status);
-      console.error("Apps Script response URL:", response.url);
-      console.error(
-        "Apps Script content type:",
-        response.headers.get("content-type"),
-      );
-      console.error("Apps Script response preview:", text.slice(0, 1000));
-    }
-
-    /* =====================================================
-       PARSE APPS SCRIPT RESPONSE
-       ===================================================== */
 
     let data: unknown;
 
     try {
       data = JSON.parse(text);
-    } catch (error) {
-      console.error("Invalid Apps Script response:", text);
+    } catch {
+      console.error(`[${requestId}] Invalid JSON response`, {
+        status: response.status,
+        finalUrl: response.url,
+        contentType: response.headers.get("content-type"),
+        preview: text.slice(0, 500),
+      });
 
       return res.status(502).json({
         success: false,
@@ -71,13 +65,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    /* =====================================================
-       RETURN RESPONSE TO REACT
-       ===================================================== */
+    const result = data as {
+      success?: boolean;
+      message?: string;
+      tests?: unknown[];
+    };
 
-    return res.status(response.ok ? 200 : response.status).json(data);
+    console.log(`[${requestId}] Apps Script response`, {
+      status: response.status,
+      finalUrl: response.url,
+      contentType: response.headers.get("content-type"),
+      action,
+      hasTests: Array.isArray(result.tests),
+      testCount: Array.isArray(result.tests)
+        ? result.tests.length
+        : undefined,
+      message: result.message,
+    });
+
+    // A getTests request must return the tests array.
+    // Do not silently treat a health-check response as valid test data.
+    if (action === "getTests" && !Array.isArray(result.tests)) {
+      console.error(`[${requestId}] Unexpected getTests response`, {
+        finalUrl: response.url,
+        message: result.message,
+      });
+
+      return res.status(502).json({
+        success: false,
+        message: "The test server returned an unexpected response.",
+      });
+    }
+
+    return res
+      .status(response.ok ? 200 : response.status)
+      .json(data);
   } catch (error) {
-    console.error("Vercel API error:", error);
+    console.error(`[${requestId}] Vercel API error:`, error);
 
     return res.status(500).json({
       success: false,
