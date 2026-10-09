@@ -174,7 +174,6 @@ export interface FullscreenExitResponse {
   exitCount?: number;
   maxFullscreenExits?: number;
   autoSubmit?: boolean;
-  submission?: SubmitTestResponse;
 }
 export const registerFullscreenExit = (payload: {
   testId: string;
@@ -182,6 +181,6 @@ export const registerFullscreenExit = (payload: {
   section: string;
   sessionId: string;
   deviceType: string;
-  answers: SubmitAnswer[];
+  eventId: string;
 }) =>
   apiRequest<FullscreenExitResponse>({ action: "fullscreenExit", ...payload });

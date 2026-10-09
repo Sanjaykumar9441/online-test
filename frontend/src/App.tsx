@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { getTestConfig, startTest, submitTest } from "./services/api";
-import type { SubmitTestResponse } from "./services/api";
 import type { DeviceType } from "./services/device";
 import type { TestQuestion, TestResult } from "./types/test";
 import LoginPage from "./pages/LoginPage";
@@ -140,28 +139,6 @@ export default function App() {
     setResult(submittedResult);
     setPage("result");
   };
-  const handleServerAutoSubmitted = (response: SubmitTestResponse) => {
-    if (!response.success) {
-      setAppError(
-        response.message ||
-          "The automatic submission needs attention. Please contact the instructor.",
-      );
-      return;
-    }
-    const submittedResult = response.result || {
-      rollNumber,
-      section,
-      testName,
-      testId,
-      totalQuestions,
-      resultReleased: Boolean(response.resultReleased),
-    };
-    submittedResult.resultReleased = Boolean(
-      response.resultReleased ?? submittedResult.resultReleased,
-    );
-    setResult(submittedResult);
-    setPage("result");
-  };
   const handleLogout = () => {
     setPage("login");
     setRollNumber("");
@@ -243,7 +220,6 @@ export default function App() {
           fullscreenRequired={fullscreenRequired}
           maxFullscreenExits={maxFullscreenExits}
           onSubmit={handleSubmit}
-          onAutoSubmitted={handleServerAutoSubmitted}
         />
       )}
       {page === "result" && result && (
