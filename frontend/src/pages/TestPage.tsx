@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { registerFullscreenExit, sendAuditEvent } from "../services/api";
+import type { SubmitTestResponse } from "../services/api";
 import { detectDeviceType } from "../services/device";
 import type { StudentAnswer, TestQuestion } from "../types/test";
 
@@ -30,6 +31,7 @@ interface TestPageProps {
   fullscreenRequired: boolean;
   maxFullscreenExits: number;
   onSubmit: (answers: StudentAnswer[], automatic?: boolean) => Promise<void>;
+  onAutoSubmitted: (response: SubmitTestResponse) => void;
 }
 
 function TestPage({
@@ -45,10 +47,13 @@ function TestPage({
   fullscreenRequired,
   maxFullscreenExits,
   onSubmit,
+  onAutoSubmitted,
 }: TestPageProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
 
   const [markedForReview, setMarkedForReview] = useState<
     Record<string, boolean>
@@ -59,11 +64,19 @@ function TestPage({
   const submitHandlerRef = useRef<(automatic?: boolean) => Promise<void>>(
     async () => undefined,
   );
+  const onAutoSubmittedRef = useRef(onAutoSubmitted);
+  onAutoSubmittedRef.current = onAutoSubmitted;
   const wasFullscreenRef = useRef(Boolean(document.fullscreenElement));
   const exitRequestInFlight = useRef(false);
   const [fullscreenExitCount, setFullscreenExitCount] = useState(0);
   const [fullscreenWarning, setFullscreenWarning] = useState("");
+  const [fullscreenLocked, setFullscreenLocked] = useState(false);
+  const [
+    fullscreenAcknowledgementRequired,
+    setFullscreenAcknowledgementRequired,
+  ] = useState(false);
   const [returningFullscreen, setReturningFullscreen] = useState(false);
+  const hasExitedFullscreenRef = useRef(false);
 
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
@@ -149,8 +162,8 @@ function TestPage({
     const onFullscreenChange = async () => {
       const isFullscreen = Boolean(document.fullscreenElement);
       if (isFullscreen) {
+        const returningAfterExit = hasExitedFullscreenRef.current;
         wasFullscreenRef.current = true;
-        setFullscreenWarning("");
         void sendAuditEvent({
           testId,
           rollNumber,
@@ -158,23 +171,51 @@ function TestPage({
           sessionId,
           deviceType: detectDeviceType(),
           event: "FULLSCREEN_ENTERED",
-          detail: "Full-screen mode entered or restored",
+          detail: returningAfterExit
+            ? "Full-screen mode restored after exit"
+            : "Full-screen mode entered",
         }).catch(() => undefined);
+        if (returningAfterExit && fullscreenRequired) {
+          setFullscreenLocked(true);
+          setFullscreenAcknowledgementRequired(true);
+          setFullscreenWarning(
+            "You returned to full-screen. Acknowledge this warning before continuing your examination.",
+          );
+          void sendAuditEvent({
+            testId,
+            rollNumber,
+            section,
+            sessionId,
+            deviceType: detectDeviceType(),
+            event: "FULLSCREEN_RESTORED_ACK_REQUIRED",
+            detail: "Student must acknowledge the full-screen exit warning",
+          }).catch(() => undefined);
+        }
         return;
       }
       if (!wasFullscreenRef.current || exitRequestInFlight.current) return;
       wasFullscreenRef.current = false;
-      exitRequestInFlight.current = true;
+      hasExitedFullscreenRef.current = true;
+      setFullscreenLocked(true);
+      setFullscreenAcknowledgementRequired(false);
       setFullscreenWarning(
-        "Full-screen mode was exited. Return to full-screen immediately. Repeated exits are recorded and may trigger automatic submission.",
+        "Full-screen mode was exited. The examination is paused until you return to full-screen and acknowledge the warning.",
       );
+      exitRequestInFlight.current = true;
       try {
+        const answersForSubmission: StudentAnswer[] = questions.map(
+          (question) => ({
+            questionId: question.id,
+            selectedOption: answersRef.current[question.id] || "",
+          }),
+        );
         const response = await registerFullscreenExit({
           testId,
           rollNumber,
           section,
           sessionId,
           deviceType: detectDeviceType(),
+          answers: answersForSubmission,
         });
         if (response.success) {
           const count = Number(response.exitCount || 0);
@@ -184,10 +225,30 @@ function TestPage({
           );
           if (response.autoSubmit && !autoSubmitStarted.current) {
             autoSubmitStarted.current = true;
+            setFullscreenLocked(true);
+            setFullscreenAcknowledgementRequired(false);
             setFullscreenWarning(
-              "The allowed full-screen exit limit has been reached. Your assessment is being submitted automatically.",
+              "The configured full-screen exit limit has been reached. Your assessment is being submitted automatically.",
             );
-            await submitHandlerRef.current(true);
+            void sendAuditEvent({
+              testId,
+              rollNumber,
+              section,
+              sessionId,
+              deviceType: detectDeviceType(),
+              event: "AUTO_SUBMISSION_REQUESTED",
+              detail:
+                "Server reported that the full-screen exit limit was reached",
+            }).catch(() => undefined);
+            if (response.submission?.success) {
+              onAutoSubmittedRef.current(response.submission);
+            } else {
+              setSubmitError(
+                response.submission?.message ||
+                  "Automatic submission could not be completed. Retrying submission securely.",
+              );
+              await submitHandlerRef.current(true);
+            }
           }
         } else {
           setFullscreenWarning(
@@ -213,7 +274,43 @@ function TestPage({
     section,
     sessionId,
     maxFullscreenExits,
+    questions,
   ]);
+
+  useEffect(() => {
+    if (!fullscreenRequired || !fullscreenLocked) return;
+    const blockExamShortcuts = (event: KeyboardEvent) => {
+      // Keep keyboard focus usable inside the blocking overlay, but stop exam shortcuts.
+      if (event.key === "Tab") return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("keydown", blockExamShortcuts, true);
+    return () =>
+      document.removeEventListener("keydown", blockExamShortcuts, true);
+  }, [fullscreenRequired, fullscreenLocked]);
+
+  const acknowledgeFullscreenWarning = () => {
+    if (
+      !fullscreenRequired ||
+      !document.fullscreenElement ||
+      !fullscreenAcknowledgementRequired ||
+      submitting
+    )
+      return;
+    setFullscreenAcknowledgementRequired(false);
+    setFullscreenLocked(false);
+    setFullscreenWarning("");
+    void sendAuditEvent({
+      testId,
+      rollNumber,
+      section,
+      sessionId,
+      deviceType: detectDeviceType(),
+      event: "FULLSCREEN_WARNING_ACKNOWLEDGED",
+      detail: "Student acknowledged the full-screen exit warning",
+    }).catch(() => undefined);
+  };
 
   const returnToFullscreen = async () => {
     if (!fullscreenRequired || returningFullscreen) return;
@@ -379,280 +476,169 @@ function TestPage({
 
   return (
     <div className="premium-test-page">
-      {fullscreenWarning && (
-        <div className="fullscreen-exit-warning" role="alert">
-          <div>
-            <strong>Full-screen warning</strong>
-            <p>{fullscreenWarning}</p>
-            {fullscreenRequired &&
-              !document.fullscreenElement &&
-              !submitting && (
-                <small>
-                  Recorded exits: {fullscreenExitCount} / {maxFullscreenExits}
-                </small>
-              )}
-          </div>
-          {fullscreenRequired && !document.fullscreenElement && !submitting && (
-            <button
-              type="button"
-              onClick={returnToFullscreen}
-              disabled={returningFullscreen}
-            >
-              {returningFullscreen ? "Restoring…" : "Return to full-screen"}
-            </button>
-          )}
+      {fullscreenRequired && fullscreenLocked && (
+        <div
+          className="fullscreen-lock-overlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="fullscreen-lock-title"
+          aria-describedby="fullscreen-lock-description"
+        >
+          <section className="fullscreen-lock-card">
+            <div className="fullscreen-lock-icon" aria-hidden="true">
+              !
+            </div>
+            <span className="fullscreen-lock-eyebrow">EXAMINATION PAUSED</span>
+            <h2 id="fullscreen-lock-title">Full-screen mode required</h2>
+            <p id="fullscreen-lock-description">
+              {fullscreenWarning ||
+                "Return to full-screen mode to continue your examination."}
+            </p>
+            <div className="fullscreen-lock-count">
+              Recorded exits:{" "}
+              <strong>
+                {fullscreenExitCount} / {maxFullscreenExits}
+              </strong>
+            </div>
+            {!document.fullscreenElement ? (
+              <button
+                type="button"
+                onClick={returnToFullscreen}
+                disabled={returningFullscreen || submitting}
+              >
+                {returningFullscreen
+                  ? "Restoring full-screen…"
+                  : "Return to full-screen"}
+              </button>
+            ) : fullscreenAcknowledgementRequired ? (
+              <button
+                type="button"
+                onClick={acknowledgeFullscreenWarning}
+                disabled={submitting}
+              >
+                I understand, continue examination
+              </button>
+            ) : (
+              <p className="fullscreen-lock-status">
+                Please wait while the exit event is verified.
+              </p>
+            )}
+            {submitError && (
+              <p className="fullscreen-lock-error" role="alert">
+                {submitError}
+              </p>
+            )}
+            {submitting && (
+              <p className="fullscreen-lock-status">
+                Submitting your examination…
+              </p>
+            )}
+          </section>
         </div>
       )}
 
-      {/* =================================================
+      <div
+        inert={fullscreenRequired && fullscreenLocked ? true : undefined}
+        aria-hidden={fullscreenRequired && fullscreenLocked ? true : undefined}
+      >
+        {/* =================================================
           HEADER
       ================================================== */}
 
-      <header className="premium-test-header">
-        <div className="premium-test-brand">
-          <div className="premium-test-brand-mark">
-            <span />
-            <span />
-            <span />
+        <header className="premium-test-header">
+          <div className="premium-test-brand">
+            <div className="premium-test-brand-mark">
+              <span />
+              <span />
+              <span />
+            </div>
+
+            <div>
+              <span className="premium-test-brand-small">
+                ONLINE ASSESSMENT
+              </span>
+
+              <strong>{testName}</strong>
+
+              {subject && (
+                <span className="premium-test-subject">{subject}</span>
+              )}
+            </div>
           </div>
 
-          <div>
-            <span className="premium-test-brand-small">ONLINE ASSESSMENT</span>
-
-            <strong>{testName}</strong>
-
-            {subject && <span className="premium-test-subject">{subject}</span>}
-          </div>
-        </div>
-
-        <div
-          className={`exam-timer ${secondsRemaining !== null && secondsRemaining <= 300 ? "is-warning" : ""}`}
-          aria-live="polite"
-        >
-          <Clock3 size={17} />
-          <span>TIME LEFT</span>
-          <strong>
-            {secondsRemaining === null ? "--:--" : formatTime(secondsRemaining)}
-          </strong>
-        </div>
-
-        <div className="premium-test-student">
-          <div>
-            <span>ROLL NUMBER</span>
-
-            <strong>{rollNumber}</strong>
+          <div
+            className={`exam-timer ${secondsRemaining !== null && secondsRemaining <= 300 ? "is-warning" : ""}`}
+            aria-live="polite"
+          >
+            <Clock3 size={17} />
+            <span>TIME LEFT</span>
+            <strong>
+              {secondsRemaining === null
+                ? "--:--"
+                : formatTime(secondsRemaining)}
+            </strong>
           </div>
 
-          <div className="premium-test-student-divider" />
+          <div className="premium-test-student">
+            <div>
+              <span>ROLL NUMBER</span>
 
-          <div>
-            <span>SECTION</span>
+              <strong>{rollNumber}</strong>
+            </div>
 
-            <strong>{section}</strong>
+            <div className="premium-test-student-divider" />
+
+            <div>
+              <span>SECTION</span>
+
+              <strong>{section}</strong>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* =================================================
+        {/* =================================================
           EXAM BODY
       ================================================== */}
 
-      <main className="premium-test-main">
-        {/* =================================================
+        <main className="premium-test-main">
+          {/* =================================================
             LEFT / QUESTION
         ================================================== */}
 
-        <section className="premium-test-question-column">
-          {/* Progress header */}
+          <section className="premium-test-question-column">
+            {/* Progress header */}
 
-          <div className="premium-test-progress">
-            <div className="premium-progress-meta">
-              <div>
-                <span>QUESTION</span>
+            <div className="premium-test-progress">
+              <div className="premium-progress-meta">
+                <div>
+                  <span>QUESTION</span>
 
-                <strong>
-                  {String(currentIndex + 1).padStart(2, "0")}
-                  <em> / {String(questions.length).padStart(2, "0")}</em>
-                </strong>
+                  <strong>
+                    {String(currentIndex + 1).padStart(2, "0")}
+                    <em> / {String(questions.length).padStart(2, "0")}</em>
+                  </strong>
+                </div>
+
+                <div className="premium-progress-answered">
+                  <span>ANSWERED</span>
+
+                  <strong>
+                    {attempted}
+                    <em> / {questions.length}</em>
+                  </strong>
+                </div>
               </div>
 
-              <div className="premium-progress-answered">
-                <span>ANSWERED</span>
-
-                <strong>
-                  {attempted}
-                  <em> / {questions.length}</em>
-                </strong>
-              </div>
-            </div>
-
-            <div className="premium-progress-track">
-              <div
-                className="premium-progress-position"
-                style={{
-                  width: `${progressPercentage}%`,
-                }}
-              />
-
-              <div
-                className="premium-progress-answered-fill"
-                style={{
-                  width: `${answeredPercentage}%`,
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Question */}
-
-          <article className="premium-question-card">
-            <div className="premium-question-top">
-              <div className="premium-question-index">
-                <span>QUESTION</span>
-
-                <strong>{String(currentIndex + 1).padStart(2, "0")}</strong>
-              </div>
-
-              <div className="exam-question-actions">
-                <button
-                  type="button"
-                  className={`exam-review-toggle ${markedForReview[currentQuestion.id] ? "is-marked" : ""}`}
-                  onClick={toggleCurrentReview}
-                  disabled={submitting}
-                  aria-pressed={Boolean(markedForReview[currentQuestion.id])}
-                >
-                  <Bookmark size={15} />
-                  {markedForReview[currentQuestion.id]
-                    ? "Marked for review"
-                    : "Mark for review"}
-                </button>
-                <button
-                  type="button"
-                  className="exam-clear-answer"
-                  onClick={clearCurrentResponse}
-                  disabled={!answers[currentQuestion.id] || submitting}
-                >
-                  <RotateCcw size={14} /> Clear response
-                </button>
-              </div>
-
-              <div className="premium-question-marks">
-                {marksPerQuestion} {marksPerQuestion === 1 ? "MARK" : "MARKS"}
-              </div>
-            </div>
-
-            <div className="premium-question-body">
-              <h1>{currentQuestion.question}</h1>
-
-              <p className="premium-select-label">SELECT ONE ANSWER</p>
-
-              <div className="premium-options">
-                {currentQuestion.options.map((option, index) => {
-                  const selected = answers[currentQuestion.id] === option.key;
-
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`premium-option ${selected ? "selected" : ""}`}
-                      onClick={() => handleSelectOption(option.key)}
-                      disabled={submitting}
-                    >
-                      <span className="premium-option-number">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-
-                      <span className="premium-option-key">{option.key}</span>
-
-                      <span className="premium-option-text">{option.text}</span>
-
-                      <span className="premium-option-indicator">
-                        {selected ? <Check size={17} strokeWidth={2} /> : null}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </article>
-
-          {/* Navigation */}
-
-          <div className="premium-question-navigation">
-            <button
-              type="button"
-              className="premium-nav-back"
-              onClick={goPrevious}
-              disabled={currentIndex === 0 || submitting}
-            >
-              <ChevronLeft size={17} />
-
-              <span>Previous</span>
-            </button>
-
-            <div className="premium-nav-position">
-              {currentIndex + 1}
-              <span>/</span>
-              {questions.length}
-            </div>
-
-            {currentIndex < questions.length - 1 ? (
-              <button
-                type="button"
-                className="premium-nav-next"
-                onClick={goNext}
-                disabled={submitting}
-              >
-                <span>Save & Next</span>
-
-                <ChevronRight size={17} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="premium-nav-submit"
-                onClick={openSubmitModal}
-                disabled={submitting}
-              >
-                <span>Submit Assessment</span>
-
-                <ArrowRight size={17} />
-              </button>
-            )}
-          </div>
-        </section>
-
-        {/* =================================================
-            RIGHT / NAVIGATOR
-        ================================================== */}
-
-        <aside className="premium-test-sidebar">
-          <div className="premium-navigator">
-            <div className="premium-navigator-heading">
-              <div>
-                <span>NAVIGATION</span>
-
-                <h2>Questions</h2>
-              </div>
-
-              <div className="premium-navigator-count">
-                {attempted}
-                <span>/</span>
-                {questions.length}
-              </div>
-            </div>
-
-            {/* completion */}
-
-            <div className="premium-completion">
-              <div className="premium-completion-top">
-                <span>COMPLETION</span>
-
-                <strong>{Math.round(answeredPercentage)}%</strong>
-              </div>
-
-              <div className="premium-completion-track">
+              <div className="premium-progress-track">
                 <div
+                  className="premium-progress-position"
+                  style={{
+                    width: `${progressPercentage}%`,
+                  }}
+                />
+
+                <div
+                  className="premium-progress-answered-fill"
                   style={{
                     width: `${answeredPercentage}%`,
                   }}
@@ -660,191 +646,361 @@ function TestPage({
               </div>
             </div>
 
-            {/* Question grid */}
+            {/* Question */}
 
-            <div className="premium-question-grid">
-              {questions.map((question, index) => {
-                const answered = Boolean(answers[question.id]);
+            <article className="premium-question-card">
+              <div className="premium-question-top">
+                <div className="premium-question-index">
+                  <span>QUESTION</span>
 
-                const current = index === currentIndex;
+                  <strong>{String(currentIndex + 1).padStart(2, "0")}</strong>
+                </div>
 
-                return (
+                <div className="exam-question-actions">
                   <button
-                    key={question.id}
                     type="button"
-                    className={[
-                      "premium-question-number",
-                      answered ? "answered" : "",
-                      markedForReview[question.id] ? "review-marked" : "",
-                      current ? "current" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() => goToQuestion(index)}
+                    className={`exam-review-toggle ${markedForReview[currentQuestion.id] ? "is-marked" : ""}`}
+                    onClick={toggleCurrentReview}
                     disabled={submitting}
+                    aria-pressed={Boolean(markedForReview[currentQuestion.id])}
                   >
-                    {String(index + 1).padStart(2, "0")}
+                    <Bookmark size={15} />
+                    {markedForReview[currentQuestion.id]
+                      ? "Marked for review"
+                      : "Mark for review"}
                   </button>
-                );
-              })}
+                  <button
+                    type="button"
+                    className="exam-clear-answer"
+                    onClick={clearCurrentResponse}
+                    disabled={!answers[currentQuestion.id] || submitting}
+                  >
+                    <RotateCcw size={14} /> Clear response
+                  </button>
+                </div>
+
+                <div className="premium-question-marks">
+                  {marksPerQuestion} {marksPerQuestion === 1 ? "MARK" : "MARKS"}
+                </div>
+              </div>
+
+              <div className="premium-question-body">
+                <h1>{currentQuestion.question}</h1>
+
+                <p className="premium-select-label">SELECT ONE ANSWER</p>
+
+                <div className="premium-options">
+                  {currentQuestion.options.map((option, index) => {
+                    const selected = answers[currentQuestion.id] === option.key;
+
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`premium-option ${
+                          selected ? "selected" : ""
+                        }`}
+                        onClick={() => handleSelectOption(option.key)}
+                        disabled={submitting}
+                      >
+                        <span className="premium-option-number">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+
+                        <span className="premium-option-key">{option.key}</span>
+
+                        <span className="premium-option-text">
+                          {option.text}
+                        </span>
+
+                        <span className="premium-option-indicator">
+                          {selected ? (
+                            <Check size={17} strokeWidth={2} />
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </article>
+
+            {/* Navigation */}
+
+            <div className="premium-question-navigation">
+              <button
+                type="button"
+                className="premium-nav-back"
+                onClick={goPrevious}
+                disabled={currentIndex === 0 || submitting}
+              >
+                <ChevronLeft size={17} />
+
+                <span>Previous</span>
+              </button>
+
+              <div className="premium-nav-position">
+                {currentIndex + 1}
+                <span>/</span>
+                {questions.length}
+              </div>
+
+              {currentIndex < questions.length - 1 ? (
+                <button
+                  type="button"
+                  className="premium-nav-next"
+                  onClick={goNext}
+                  disabled={submitting}
+                >
+                  <span>Save & Next</span>
+
+                  <ChevronRight size={17} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="premium-nav-submit"
+                  onClick={openSubmitModal}
+                  disabled={submitting}
+                >
+                  <span>Submit Assessment</span>
+
+                  <ArrowRight size={17} />
+                </button>
+              )}
             </div>
+          </section>
 
-            {/* Legend */}
+          {/* =================================================
+            RIGHT / NAVIGATOR
+        ================================================== */}
 
-            <div className="premium-navigator-legend">
-              <div>
-                <span className="legend-current" />
-                Current
+          <aside className="premium-test-sidebar">
+            <div className="premium-navigator">
+              <div className="premium-navigator-heading">
+                <div>
+                  <span>NAVIGATION</span>
+
+                  <h2>Questions</h2>
+                </div>
+
+                <div className="premium-navigator-count">
+                  {attempted}
+                  <span>/</span>
+                  {questions.length}
+                </div>
               </div>
 
-              <div>
-                <span className="legend-answered" />
-                Answered
+              {/* completion */}
+
+              <div className="premium-completion">
+                <div className="premium-completion-top">
+                  <span>COMPLETION</span>
+
+                  <strong>{Math.round(answeredPercentage)}%</strong>
+                </div>
+
+                <div className="premium-completion-track">
+                  <div
+                    style={{
+                      width: `${answeredPercentage}%`,
+                    }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <span className="legend-unanswered" />
-                Unanswered
+              {/* Question grid */}
+
+              <div className="premium-question-grid">
+                {questions.map((question, index) => {
+                  const answered = Boolean(answers[question.id]);
+
+                  const current = index === currentIndex;
+
+                  return (
+                    <button
+                      key={question.id}
+                      type="button"
+                      className={[
+                        "premium-question-number",
+                        answered ? "answered" : "",
+                        markedForReview[question.id] ? "review-marked" : "",
+                        current ? "current" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => goToQuestion(index)}
+                      disabled={submitting}
+                    >
+                      {String(index + 1).padStart(2, "0")}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div>
-                <span className="legend-review" />
-                Marked for review ({reviewCount})
+              {/* Legend */}
+
+              <div className="premium-navigator-legend">
+                <div>
+                  <span className="legend-current" />
+                  Current
+                </div>
+
+                <div>
+                  <span className="legend-answered" />
+                  Answered
+                </div>
+
+                <div>
+                  <span className="legend-unanswered" />
+                  Unanswered
+                </div>
+
+                <div>
+                  <span className="legend-review" />
+                  Marked for review ({reviewCount})
+                </div>
+              </div>
+
+              {/* Summary */}
+
+              <div className="premium-navigator-summary">
+                <div>
+                  <span>ATTEMPTED</span>
+
+                  <strong>{attempted}</strong>
+                </div>
+
+                <div>
+                  <span>REMAINING</span>
+
+                  <strong>{unanswered}</strong>
+                </div>
+
+                <div>
+                  <span>MAX MARKS</span>
+
+                  <strong>{questions.length * marksPerQuestion}</strong>
+                </div>
+              </div>
+
+              <div className="premium-secure-note">
+                <ShieldCheck size={16} strokeWidth={1.5} />
+
+                <span>Answers are securely recorded on submission.</span>
               </div>
             </div>
+          </aside>
+        </main>
 
-            {/* Summary */}
-
-            <div className="premium-navigator-summary">
-              <div>
-                <span>ATTEMPTED</span>
-
-                <strong>{attempted}</strong>
-              </div>
-
-              <div>
-                <span>REMAINING</span>
-
-                <strong>{unanswered}</strong>
-              </div>
-
-              <div>
-                <span>MAX MARKS</span>
-
-                <strong>{questions.length * marksPerQuestion}</strong>
-              </div>
-            </div>
-
-            <div className="premium-secure-note">
-              <ShieldCheck size={16} strokeWidth={1.5} />
-
-              <span>Answers are securely recorded on submission.</span>
-            </div>
-          </div>
-        </aside>
-      </main>
-
-      {/* =================================================
+        {/* =================================================
           SUBMIT MODAL
       ================================================== */}
 
-      {showSubmitModal && (
-        <div className="premium-submit-overlay" role="dialog" aria-modal="true">
-          <div className="premium-submit-modal">
-            <div className="premium-submit-icon">
-              <CircleHelp size={26} strokeWidth={1.3} />
-            </div>
-
-            <span className="premium-submit-overline">FINAL CONFIRMATION</span>
-
-            <h2>Submit assessment?</h2>
-
-            <p>
-              Please review your answers before continuing. Once submitted, your
-              assessment will be recorded and cannot be attempted again.
-            </p>
-
-            <div className="premium-submit-summary">
-              <div>
-                <span>QUESTIONS</span>
-
-                <strong>{questions.length}</strong>
+        {showSubmitModal && (
+          <div
+            className="premium-submit-overlay"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="premium-submit-modal">
+              <div className="premium-submit-icon">
+                <CircleHelp size={26} strokeWidth={1.3} />
               </div>
 
-              <div>
-                <span>ANSWERED</span>
+              <span className="premium-submit-overline">
+                FINAL CONFIRMATION
+              </span>
 
-                <strong>{attempted}</strong>
+              <h2>Submit assessment?</h2>
+
+              <p>
+                Please review your answers before continuing. Once submitted,
+                your assessment will be recorded and cannot be attempted again.
+              </p>
+
+              <div className="premium-submit-summary">
+                <div>
+                  <span>QUESTIONS</span>
+
+                  <strong>{questions.length}</strong>
+                </div>
+
+                <div>
+                  <span>ANSWERED</span>
+
+                  <strong>{attempted}</strong>
+                </div>
+
+                <div>
+                  <span>UNANSWERED</span>
+
+                  <strong>{unanswered}</strong>
+                </div>
+
+                <div>
+                  <span>REVIEW</span>
+
+                  <strong>{reviewCount}</strong>
+                </div>
               </div>
 
-              <div>
-                <span>UNANSWERED</span>
+              {unanswered > 0 && (
+                <div className="premium-submit-warning">
+                  <strong>
+                    {unanswered}{" "}
+                    {unanswered === 1 ? "question remains" : "questions remain"}{" "}
+                    unanswered.
+                  </strong>
 
-                <strong>{unanswered}</strong>
+                  <span>
+                    You may return and review your answers before submitting.
+                  </span>
+                </div>
+              )}
+
+              {submitError && (
+                <div className="premium-submit-error">
+                  <strong>Submission failed</strong>
+
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              <div className="premium-submit-actions">
+                <button
+                  type="button"
+                  className="premium-review-button"
+                  onClick={closeSubmitModal}
+                  disabled={submitting}
+                >
+                  <ArrowLeft size={16} />
+                  Review Answers
+                </button>
+
+                <button
+                  type="button"
+                  className="premium-confirm-button"
+                  onClick={() => void handleSubmit()}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <span className="premium-button-spinner" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      Confirm Submission
+                      <ArrowRight size={16} />
+                    </>
+                  )}
+                </button>
               </div>
-
-              <div>
-                <span>REVIEW</span>
-
-                <strong>{reviewCount}</strong>
-              </div>
-            </div>
-
-            {unanswered > 0 && (
-              <div className="premium-submit-warning">
-                <strong>
-                  {unanswered}{" "}
-                  {unanswered === 1 ? "question remains" : "questions remain"}{" "}
-                  unanswered.
-                </strong>
-
-                <span>
-                  You may return and review your answers before submitting.
-                </span>
-              </div>
-            )}
-
-            {submitError && (
-              <div className="premium-submit-error">
-                <strong>Submission failed</strong>
-
-                <span>{submitError}</span>
-              </div>
-            )}
-
-            <div className="premium-submit-actions">
-              <button
-                type="button"
-                className="premium-review-button"
-                onClick={closeSubmitModal}
-                disabled={submitting}
-              >
-                <ArrowLeft size={16} />
-                Review Answers
-              </button>
-
-              <button
-                type="button"
-                className="premium-confirm-button"
-                onClick={() => void handleSubmit()}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <>
-                    <span className="premium-button-spinner" />
-                    Submitting...
-                  </>
-                ) : (
-                  <>
-                    Confirm Submission
-                    <ArrowRight size={16} />
-                  </>
-                )}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
