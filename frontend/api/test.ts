@@ -2,10 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse
-) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   /* =======================================================
      METHOD CHECK
      ======================================================= */
@@ -22,9 +19,7 @@ export default async function handler(
      ======================================================= */
 
   if (!APPS_SCRIPT_URL) {
-    console.error(
-      "APPS_SCRIPT_URL environment variable is missing."
-    );
+    console.error("APPS_SCRIPT_URL environment variable is missing.");
 
     return res.status(500).json({
       success: false,
@@ -37,22 +32,27 @@ export default async function handler(
      ======================================================= */
 
   try {
-    const response = await fetch(
-      APPS_SCRIPT_URL,
-      {
-        method: "POST",
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
 
-        // Vercel → Google Apps Script
-        headers: {
-          "Content-Type":
-            "text/plain;charset=utf-8",
-        },
+      // Vercel → Google Apps Script
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
 
-        body: JSON.stringify(req.body),
-      }
-    );
+      body: JSON.stringify(req.body),
+    });
 
     const text = await response.text();
+    if (!text.trim().startsWith("{")) {
+      console.error("Apps Script HTTP status:", response.status);
+      console.error("Apps Script response URL:", response.url);
+      console.error(
+        "Apps Script content type:",
+        response.headers.get("content-type"),
+      );
+      console.error("Apps Script response preview:", text.slice(0, 1000));
+    }
 
     /* =====================================================
        PARSE APPS SCRIPT RESPONSE
@@ -63,15 +63,11 @@ export default async function handler(
     try {
       data = JSON.parse(text);
     } catch (error) {
-      console.error(
-        "Invalid Apps Script response:",
-        text
-      );
+      console.error("Invalid Apps Script response:", text);
 
       return res.status(502).json({
         success: false,
-        message:
-          "Invalid response received from the test server.",
+        message: "Invalid response received from the test server.",
       });
     }
 
@@ -79,20 +75,13 @@ export default async function handler(
        RETURN RESPONSE TO REACT
        ===================================================== */
 
-    return res
-      .status(response.ok ? 200 : response.status)
-      .json(data);
-
+    return res.status(response.ok ? 200 : response.status).json(data);
   } catch (error) {
-    console.error(
-      "Vercel API error:",
-      error
-    );
+    console.error("Vercel API error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to connect to the test server.",
+      message: "Unable to connect to the test server.",
     });
   }
 }
