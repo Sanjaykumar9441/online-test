@@ -36,6 +36,8 @@ function App() {
   const [testName, setTestName] =
     useState("");
 
+  const [testId, setTestId] = useState("");
+
   const [subject, setSubject] =
     useState("");
 
@@ -60,12 +62,13 @@ function App() {
 
   const handleLogin = async (
     studentRollNumber: string,
-    studentSection: string
+    studentSection: string,
+    selectedTestId?: string,
   ) => {
     setAppError("");
 
     try {
-      const config = await getTestConfig();
+      const config = await getTestConfig(selectedTestId);
 
       if (!config.success) {
         throw new Error(
@@ -83,6 +86,8 @@ function App() {
           "The test is currently closed."
         );
       }
+
+      setTestId(selectedTestId || config.testId || "");
 
       setRollNumber(
         studentRollNumber.trim().toUpperCase()
@@ -127,7 +132,8 @@ function App() {
     try {
       const response = await startTest(
         rollNumber,
-        section
+        section,
+        testId || undefined,
       );
 
       if (!response.success) {
@@ -212,7 +218,8 @@ function App() {
       const response = await submitTest(
         rollNumber,
         section,
-        answers
+        answers,
+        testId || undefined,
       );
 
       if (!response.success) {
@@ -260,6 +267,7 @@ function App() {
     setSection("");
 
     setTestName("");
+    setTestId("");
     setSubject("");
 
     setTotalQuestions(0);

@@ -41,6 +41,25 @@ export interface SubmitTestResponse {
   result?: TestResult;
 }
 
+export interface AvailableTest {
+  testId: string;
+  testName: string;
+  subject?: string;
+  totalQuestions?: number;
+  marksPerQuestion?: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  durationMinutes?: number;
+  status: string;
+  canStart: boolean;
+}
+
+export interface TestsResponse {
+  success: boolean;
+  message?: string;
+  tests?: AvailableTest[];
+}
+
 export interface TestConfigResponse {
   success: boolean;
   message?: string;
@@ -54,6 +73,10 @@ export interface TestConfigResponse {
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
   testStatus?: string;
+  testId?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  durationMinutes?: number;
   questionIds?: string[];
 }
 
@@ -129,12 +152,14 @@ async function apiRequest<T>(
 
 export async function validateStudent(
   rollNumber: string,
-  section: string
+  section: string,
+  testId?: string,
 ): Promise<StudentValidationResponse> {
   return apiRequest<StudentValidationResponse>({
     action: "validateStudent",
     rollNumber,
     section,
+    ...(testId ? { testId } : {}),
   });
 }
 
@@ -152,9 +177,14 @@ export async function getSections(): Promise<SectionsResponse> {
    GET TEST CONFIG
    ========================================================= */
 
-export async function getTestConfig(): Promise<TestConfigResponse> {
+export async function getTests(): Promise<TestsResponse> {
+  return apiRequest<TestsResponse>({ action: "getTests" });
+}
+
+export async function getTestConfig(testId?: string): Promise<TestConfigResponse> {
   return apiRequest<TestConfigResponse>({
     action: "getTestConfig",
+    ...(testId ? { testId } : {}),
   });
 }
 
@@ -164,12 +194,14 @@ export async function getTestConfig(): Promise<TestConfigResponse> {
 
 export async function startTest(
   rollNumber: string,
-  section: string
+  section: string,
+  testId?: string,
 ): Promise<StartTestResponse> {
   return apiRequest<StartTestResponse>({
     action: "startTest",
     rollNumber,
     section,
+    ...(testId ? { testId } : {}),
   });
 }
 
@@ -180,12 +212,14 @@ export async function startTest(
 export async function submitTest(
   rollNumber: string,
   section: string,
-  answers: SubmitAnswer[]
+  answers: SubmitAnswer[],
+  testId?: string,
 ): Promise<SubmitTestResponse> {
   return apiRequest<SubmitTestResponse>({
     action: "submitTest",
     rollNumber,
     section,
     answers,
+    ...(testId ? { testId } : {}),
   });
 }

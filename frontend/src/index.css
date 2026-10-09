@@ -9280,3 +9280,31 @@ button {
   text-transform: uppercase;
   color: #64748b;
 }
+/* Assessment availability card — clear, accessible status feedback */
+.assessment-status-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 2px 0 4px;
+  padding: 14px 15px;
+  border: 1px solid #dfe5ed;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #243247;
+}
+.assessment-status-card strong { display: block; font-size: 13px; font-weight: 750; line-height: 1.45; }
+.assessment-status-card p { margin: 3px 0 0; color: #65738a; font-size: 12px; line-height: 1.55; }
+.assessment-status-indicator { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 4px; border-radius: 50%; background: #94a3b8; }
+.assessment-status-card.status-open { background: #f0fdf4; border-color: #bbf7d0; }
+.assessment-status-card.status-open .assessment-status-indicator { background: #16a34a; }
+.assessment-status-card.status-upcoming { background: #fffbeb; border-color: #fde68a; }
+.assessment-status-card.status-upcoming .assessment-status-indicator { background: #d97706; }
+.assessment-status-card.status-paused { background: #fff7ed; border-color: #fed7aa; }
+.assessment-status-card.status-paused .assessment-status-indicator { background: #ea580c; }
+.assessment-status-card.status-closed { background: #fef2f2; border-color: #fecaca; }
+.assessment-status-card.status-closed .assessment-status-indicator { background: #dc2626; }
+.luxury-submit:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+@media (max-width: 640px) {
+  .assessment-status-card { padding: 12px; }
+  .assessment-status-card p { font-size: 11px; }
+}

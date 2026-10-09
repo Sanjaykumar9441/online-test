@@ -7,10 +7,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { getSections, getTestConfig, validateStudent } from "../services/api";
+import { getSections, getTestConfig, getTests, validateStudent, type AvailableTest } from "../services/api";
 
 interface LoginPageProps {
-  onLogin: (rollNumber: string, section: string) => void | Promise<void>;
+  onLogin: (rollNumber: string, section: string, testId?: string) => void | Promise<void>;
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
@@ -18,6 +18,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [section, setSection] = useState("");
   const [testName, setTestName] = useState("Online Assessment");
   const [subject, setSubject] = useState("");
+  const [testId, setTestId] = useState("");
+  const [testStatus, setTestStatus] = useState("LOADING");
+  const [startTime, setStartTime] = useState<string | null>(null);
+  const [endTime, setEndTime] = useState<string | null>(null);
+  const [tests, setTests] = useState<AvailableTest[]>([]);
 
   const [sections, setSections] = useState<string[]>([]);
 
@@ -33,52 +38,84 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       try {
         setSectionsLoading(true);
         setError("");
-
-        const [sectionsResponse, configResponse] = await Promise.all([
+        const [sectionsResponse, testsResponse] = await Promise.all([
           getSections(),
-          getTestConfig(),
+          getTests(),
         ]);
-
-        if (!sectionsResponse.success) {
-          throw new Error(
-            sectionsResponse.message || "Unable to load sections.",
-          );
-        }
-
-        if (!configResponse.success) {
-          throw new Error(
-            configResponse.message || "Unable to load assessment details.",
-          );
-        }
-
+        if (!sectionsResponse.success) throw new Error(sectionsResponse.message || "Unable to load sections.");
+        if (!testsResponse.success) throw new Error(testsResponse.message || "Unable to load assessments.");
+        const available = testsResponse.tests || [];
         if (active) {
           setSections(sectionsResponse.sections || []);
-
-          setTestName(configResponse.testName || "Online Assessment");
-
-          setSubject(configResponse.subject || "");
+          setTests(available);
+          const selected = available[0];
+          if (selected) {
+            setTestId(selected.testId);
+            setTestName(selected.testName || "Online Assessment");
+            setSubject(selected.subject || "");
+            setTestStatus(selected.status || "UNKNOWN");
+            setStartTime(selected.startTime || null);
+            setEndTime(selected.endTime || null);
+          } else {
+            // Backward-compatible fallback for a single-test Apps Script deployment.
+            const config = await getTestConfig();
+            if (!config.success) throw new Error(config.message || "Unable to load assessment details.");
+            setTestName(config.testName || "Online Assessment");
+            setSubject(config.subject || "");
+            setTestStatus(config.testStatus || "UNKNOWN");
+            setStartTime(config.startTime || null);
+            setEndTime(config.endTime || null);
+          }
         }
       } catch (error) {
         if (!active) return;
-
-        setError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load assessment details.",
-        );
+        setError(error instanceof Error ? error.message : "Unable to load assessment details.");
       } finally {
-        if (active) {
-          setSectionsLoading(false);
-        }
+        if (active) setSectionsLoading(false);
       }
     };
-
     loadPageData();
 
     return () => {
       active = false;
     };
   }, []);
+
+  const handleTestChange = async (nextTestId: string) => {
+    setTestId(nextTestId);
+    setError("");
+    const selected = tests.find((item) => item.testId === nextTestId);
+    if (selected) {
+      setTestName(selected.testName || "Online Assessment");
+      setSubject(selected.subject || "");
+      setTestStatus(selected.status || "UNKNOWN");
+      setStartTime(selected.startTime || null);
+      setEndTime(selected.endTime || null);
+      return;
+    }
+    try {
+      const config = await getTestConfig(nextTestId);
+      setTestName(config.testName || "Online Assessment");
+      setSubject(config.subject || "");
+      setTestStatus(config.testStatus || "UNKNOWN");
+      setStartTime(config.startTime || null);
+      setEndTime(config.endTime || null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to load this assessment.");
+    }
+  };
+
+  const statusMessage = (() => {
+    switch (testStatus.toUpperCase()) {
+      case "OPEN": return { title: "Assessment is open", detail: "Your assessment is available. Verify your student details to continue.", className: "status-open" };
+      case "UPCOMING": return { title: "Assessment scheduled", detail: startTime ? `Starts ${new Date(startTime).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}. Access will open at the scheduled time.` : "Access will open at the scheduled start time.", className: "status-upcoming" };
+      case "PAUSED": return { title: "Assessment paused", detail: "The assessment administrator has temporarily paused access.", className: "status-paused" };
+      case "CLOSED": return { title: "Assessment closed", detail: endTime ? `The assessment window ended ${new Date(endTime).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.` : "The assessment window has ended.", className: "status-closed" };
+      case "DRAFT": return { title: "Not published yet", detail: "This assessment is not available to students yet.", className: "status-closed" };
+      case "SCHEDULE_ERROR": return { title: "Schedule needs attention", detail: "The assessment schedule could not be read. Please contact your assessment administrator.", className: "status-closed" };
+      default: return { title: "Checking assessment status", detail: "Assessment availability is being checked with the server.", className: "status-upcoming" };
+    }
+  })();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -109,7 +146,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const response = await validateStudent(cleanRollNumber, cleanSection);
+      const response = await validateStudent(cleanRollNumber, cleanSection, testId || undefined);
 
       if (!response.success) {
         setError(response.message || "Invalid roll number or section.");
@@ -121,7 +158,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         return;
       }
 
-      await onLogin(cleanRollNumber, cleanSection);
+      if (testStatus.toUpperCase() !== "OPEN") {
+        setError(statusMessage.detail);
+        return;
+      }
+      await onLogin(cleanRollNumber, cleanSection, testId || undefined);
     } catch (error) {
       setError(
         error instanceof Error
@@ -233,6 +274,21 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="luxury-line" />
 
           <form className="luxury-form" onSubmit={handleSubmit}>
+            {tests.length > 1 && (
+              <div className="luxury-field">
+                <label htmlFor="assessment-select"><span>Select assessment</span><small>REQUIRED</small></label>
+                <div className="luxury-input">
+                  <select id="assessment-select" value={testId} disabled={loading || sectionsLoading} onChange={(event) => void handleTestChange(event.target.value)}>
+                    {tests.map((item) => <option key={item.testId} value={item.testId}>{item.testName} — {item.subject || item.testId}</option>)}
+                  </select>
+                  <ChevronDown className="luxury-chevron" size={17} />
+                </div>
+              </div>
+            )}
+            <div className={`assessment-status-card ${statusMessage.className}`} role="status">
+              <span className="assessment-status-indicator" />
+              <div><strong>{statusMessage.title}</strong><p>{statusMessage.detail}</p></div>
+            </div>
             {/* Roll */}
 
             <div className="luxury-field">
@@ -312,14 +368,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <button
               type="submit"
               className="luxury-submit"
-              disabled={loading || sectionsLoading || sections.length === 0}
+              disabled={loading || sectionsLoading || sections.length === 0 || testStatus.toUpperCase() !== "OPEN"}
             >
               <span>
                 {loading
                   ? "VERIFYING ACCESS"
                   : sectionsLoading
                     ? "LOADING"
-                    : "CONTINUE TO ASSESSMENT"}
+                    : testStatus.toUpperCase() !== "OPEN"
+                      ? "ASSESSMENT NOT OPEN"
+                      : "CONTINUE TO ASSESSMENT"}
               </span>
 
               {loading || sectionsLoading ? (
