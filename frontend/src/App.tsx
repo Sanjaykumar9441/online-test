@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getTestConfig, startTest, submitTest } from "./services/api";
+import type { DeviceType } from "./services/device";
 import type { TestQuestion, TestResult } from "./types/test";
 import LoginPage from "./pages/LoginPage";
 import InstructionsPage from "./pages/InstructionsPage";
@@ -31,6 +32,8 @@ export default function App() {
   const [marksPerQuestion, setMarksPerQuestion] = useState(1);
   const [expiresAt, setExpiresAt] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [fullscreenRequired, setFullscreenRequired] = useState(false);
+  const [maxFullscreenExits, setMaxFullscreenExits] = useState(3);
   const [questions, setQuestions] = useState<TestQuestion[]>([]);
   const [result, setResult] = useState<TestResult | null>(null);
   const [appError, setAppError] = useState("");
@@ -62,9 +65,14 @@ export default function App() {
     setSubject(config.subject || "");
     setTotalQuestions(Number(config.totalQuestions || 0));
     setMarksPerQuestion(Number(config.marksPerQuestion || 1));
+    setFullscreenRequired(Boolean(config.fullscreenRequired));
+    setMaxFullscreenExits(Math.max(1, Number(config.maxFullscreenExits || 3)));
     setPage("instructions");
   };
-  const handleStartTest = async () => {
+  const handleStartTest = async (
+    fullscreenEntered: boolean,
+    deviceType: DeviceType,
+  ) => {
     setAppError("");
     const activeSessionId = getSessionId();
     setSessionId(activeSessionId);
@@ -74,6 +82,8 @@ export default function App() {
       testId,
       activeSessionId,
       navigator.userAgent.slice(0, 250),
+      fullscreenEntered,
+      deviceType,
     );
     if (!response.success)
       throw new Error(
@@ -90,12 +100,19 @@ export default function App() {
       Number(response.totalQuestions || response.questions.length),
     );
     setMarksPerQuestion(Number(response.marksPerQuestion || marksPerQuestion));
+    setFullscreenRequired(
+      Boolean(response.fullscreenRequired ?? fullscreenRequired),
+    );
+    setMaxFullscreenExits(
+      Math.max(1, Number(response.maxFullscreenExits || maxFullscreenExits)),
+    );
     setExpiresAt(response.expiresAt || "");
     setQuestions(response.questions);
     setPage("test");
   };
   const handleSubmit = async (
     answers: { questionId: string; selectedOption: string }[],
+    automatic = false,
   ) => {
     setAppError("");
     const response = await submitTest(
@@ -104,6 +121,7 @@ export default function App() {
       answers,
       testId,
       sessionId || getSessionId(),
+      automatic,
     );
     if (!response.success)
       throw new Error(response.message || "Unable to submit the assessment.");
@@ -132,6 +150,8 @@ export default function App() {
     setMarksPerQuestion(1);
     setExpiresAt("");
     setSessionId("");
+    setFullscreenRequired(false);
+    setMaxFullscreenExits(3);
     setQuestions([]);
     setResult(null);
     setAppError("");
@@ -173,9 +193,11 @@ export default function App() {
           subject={subject}
           totalQuestions={totalQuestions}
           marksPerQuestion={marksPerQuestion}
-          onStart={async () => {
+          testId={testId}
+          fullscreenRequired={fullscreenRequired}
+          onStart={async (fullscreenEntered, deviceType) => {
             try {
-              await handleStartTest();
+              await handleStartTest(fullscreenEntered, deviceType);
             } catch (e) {
               setAppError(e instanceof Error ? e.message : "Unable to start.");
               throw e;
@@ -194,6 +216,9 @@ export default function App() {
           questions={questions}
           marksPerQuestion={marksPerQuestion}
           expiresAt={expiresAt}
+          sessionId={sessionId}
+          fullscreenRequired={fullscreenRequired}
+          maxFullscreenExits={maxFullscreenExits}
           onSubmit={handleSubmit}
         />
       )}

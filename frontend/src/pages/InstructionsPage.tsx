@@ -9,29 +9,38 @@ import {
   Target,
 } from "lucide-react";
 import { useState } from "react";
+import { detectDeviceType, type DeviceType } from "../services/device";
+import { sendAuditEvent } from "../services/api";
 
 interface InstructionsPageProps {
   rollNumber: string;
   section: string;
+  testId: string;
   testName: string;
   subject: string;
   totalQuestions: number;
   marksPerQuestion: number;
-  onStart: () => void | Promise<void>;
+  fullscreenRequired: boolean;
+  onStart: (fullscreenEntered: boolean, deviceType: DeviceType) => void | Promise<void>;
   onLogout: () => void;
 }
 
 function InstructionsPage({
   rollNumber,
   section,
+  testId,
   testName,
   subject,
   totalQuestions,
   marksPerQuestion,
+  fullscreenRequired,
   onStart,
   onLogout,
 }: InstructionsPageProps) {
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState("");
+  const deviceType = detectDeviceType();
+  const deviceBlocked = fullscreenRequired && deviceType !== "desktop";
 
   const maximumMarks =
     totalQuestions * marksPerQuestion;
@@ -42,14 +51,21 @@ function InstructionsPage({
     }
 
     setStarting(true);
+    setStartError("");
 
     try {
-      await onStart();
-    } catch {
-      /*
-       * App.tsx handles the actual error state.
-       * This catch prevents an unhandled rejection.
-       */
+      let fullscreenEntered = false;
+      if (fullscreenRequired) {
+        if (deviceType !== "desktop") throw new Error("This examination requires a desktop or laptop in full-screen mode.");
+        if (!(document.documentElement.requestFullscreen)) throw new Error("Your browser does not support full-screen mode. Please use the latest Chrome, Edge, or Firefox on a desktop or laptop.");
+        try { await document.documentElement.requestFullscreen(); } catch { throw new Error("Full-screen mode could not be enabled. Allow full-screen access in your browser and try again."); }
+        fullscreenEntered = Boolean(document.fullscreenElement);
+        if (!fullscreenEntered) throw new Error("Full-screen mode is required before this examination can start.");
+        await sendAuditEvent({ testId, rollNumber, section, event: "FULLSCREEN_ENTERED", detail: "Student entered full-screen before starting", deviceType });
+      }
+      await onStart(fullscreenEntered, deviceType);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : "Unable to start the assessment.");
     } finally {
       setStarting(false);
     }
@@ -395,6 +411,9 @@ function InstructionsPage({
 
         </section>
 
+        {deviceBlocked && <div className="fullscreen-device-block" role="alert"><strong>Desktop or laptop required</strong><p>This examination requires a desktop or laptop in full-screen mode.</p></div>}
+        {startError && <div className="fullscreen-device-block" role="alert"><strong>Unable to start examination</strong><p>{startError}</p></div>}
+
         {/* =================================================
             IMPORTANT NOTICE
         ================================================== */}
@@ -456,7 +475,8 @@ function InstructionsPage({
             onClick={handleStart}
             disabled={
               starting ||
-              totalQuestions <= 0
+              totalQuestions <= 0 ||
+              deviceBlocked
             }
           >
             {starting ? (
@@ -473,7 +493,7 @@ function InstructionsPage({
             ) : (
               <>
                 <span>
-                  Begin Assessment
+                  {fullscreenRequired ? "Enter Full-Screen & Begin" : "Begin Assessment"}
                 </span>
 
                 <ArrowUpRight

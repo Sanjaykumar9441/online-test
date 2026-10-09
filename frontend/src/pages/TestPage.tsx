@@ -13,11 +13,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { sendAuditEvent } from "../services/api";
-import type {
-  StudentAnswer,
-  TestQuestion,
-} from "../types/test";
+import { registerFullscreenExit, sendAuditEvent } from "../services/api";
+import { detectDeviceType } from "../services/device";
+import type { StudentAnswer, TestQuestion } from "../types/test";
 
 interface TestPageProps {
   rollNumber: string;
@@ -28,7 +26,10 @@ interface TestPageProps {
   questions: TestQuestion[];
   marksPerQuestion: number;
   expiresAt?: string;
-  onSubmit: (answers: StudentAnswer[]) => Promise<void>;
+  sessionId: string;
+  fullscreenRequired: boolean;
+  maxFullscreenExits: number;
+  onSubmit: (answers: StudentAnswer[], automatic?: boolean) => Promise<void>;
 }
 
 function TestPage({
@@ -40,43 +41,47 @@ function TestPage({
   questions,
   marksPerQuestion,
   expiresAt,
+  sessionId,
+  fullscreenRequired,
+  maxFullscreenExits,
   onSubmit,
 }: TestPageProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const [answers, setAnswers] = useState<
-    Record<string, string>
-  >({});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const [markedForReview, setMarkedForReview] =
-    useState<Record<string, boolean>>({});
+  const [markedForReview, setMarkedForReview] = useState<
+    Record<string, boolean>
+  >({});
 
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const autoSubmitStarted = useRef(false);
+  const submitHandlerRef = useRef<(automatic?: boolean) => Promise<void>>(
+    async () => undefined,
+  );
+  const wasFullscreenRef = useRef(Boolean(document.fullscreenElement));
+  const exitRequestInFlight = useRef(false);
+  const [fullscreenExitCount, setFullscreenExitCount] = useState(0);
+  const [fullscreenWarning, setFullscreenWarning] = useState("");
+  const [returningFullscreen, setReturningFullscreen] = useState(false);
 
-  const [showSubmitModal, setShowSubmitModal] =
-    useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
 
-  const [submitting, setSubmitting] =
-    useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [submitError, setSubmitError] =
-    useState("");
+  const [submitError, setSubmitError] = useState("");
 
-  const currentQuestion =
-    questions[currentIndex];
+  const currentQuestion = questions[currentIndex];
 
   const attempted = useMemo(() => {
-    return questions.filter(
-      (question) =>
-        Boolean(answers[question.id])
-    ).length;
+    return questions.filter((question) => Boolean(answers[question.id])).length;
   }, [answers, questions]);
 
-  const unanswered =
-    questions.length - attempted;
+  const unanswered = questions.length - attempted;
 
-  const reviewCount = questions.filter((question) => markedForReview[question.id]).length;
+  const reviewCount = questions.filter(
+    (question) => markedForReview[question.id],
+  ).length;
 
   const formatTime = (totalSeconds: number) => {
     const safe = Math.max(0, totalSeconds);
@@ -91,7 +96,10 @@ function TestPage({
   useEffect(() => {
     if (!expiresAt) return;
     const updateRemaining = () => {
-      const remaining = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000),
+      );
       setSecondsRemaining(remaining);
     };
     updateRemaining();
@@ -100,35 +108,151 @@ function TestPage({
   }, [expiresAt]);
 
   useEffect(() => {
-    const logVisibility = () => {
-      const event = document.visibilityState === "hidden" ? "TAB_HIDDEN" : "TAB_VISIBLE";
-      void sendAuditEvent({ testId, rollNumber, section, event, detail: "Page visibility changed" }).catch(() => undefined);
+    const deviceType = detectDeviceType();
+    const log = (event: string, detail: string) => {
+      void sendAuditEvent({
+        testId,
+        rollNumber,
+        section,
+        sessionId,
+        deviceType,
+        event,
+        detail,
+      }).catch(() => undefined);
     };
+    const logVisibility = () =>
+      log(
+        document.visibilityState === "hidden" ? "TAB_HIDDEN" : "TAB_VISIBLE",
+        "Document visibility changed to " + document.visibilityState,
+      );
+    const onBlur = () => log("WINDOW_BLUR", "Assessment window lost focus");
+    const onFocus = () =>
+      log("WINDOW_FOCUS", "Assessment window regained focus");
+    const onPageHide = () =>
+      log("PAGE_HIDE_OR_MINIMIZE", "Page hide or browser minimize signal");
     document.addEventListener("visibilitychange", logVisibility);
-    return () => document.removeEventListener("visibilitychange", logVisibility);
-  }, [testId, rollNumber, section]);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pagehide", onPageHide);
+    log("DEVICE_TYPE_DETECTED", "Client classified device as " + deviceType);
+    return () => {
+      document.removeEventListener("visibilitychange", logVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [testId, rollNumber, section, sessionId]);
 
   useEffect(() => {
-    if (secondsRemaining !== 0 || autoSubmitStarted.current || submitting) return;
+    if (!fullscreenRequired) return;
+    wasFullscreenRef.current = Boolean(document.fullscreenElement);
+    const onFullscreenChange = async () => {
+      const isFullscreen = Boolean(document.fullscreenElement);
+      if (isFullscreen) {
+        wasFullscreenRef.current = true;
+        setFullscreenWarning("");
+        void sendAuditEvent({
+          testId,
+          rollNumber,
+          section,
+          sessionId,
+          deviceType: detectDeviceType(),
+          event: "FULLSCREEN_ENTERED",
+          detail: "Full-screen mode entered or restored",
+        }).catch(() => undefined);
+        return;
+      }
+      if (!wasFullscreenRef.current || exitRequestInFlight.current) return;
+      wasFullscreenRef.current = false;
+      exitRequestInFlight.current = true;
+      setFullscreenWarning(
+        "Full-screen mode was exited. Return to full-screen immediately. Repeated exits are recorded and may trigger automatic submission.",
+      );
+      try {
+        const response = await registerFullscreenExit({
+          testId,
+          rollNumber,
+          section,
+          sessionId,
+          deviceType: detectDeviceType(),
+        });
+        if (response.success) {
+          const count = Number(response.exitCount || 0);
+          setFullscreenExitCount(count);
+          setFullscreenWarning(
+            `Warning ${count} of ${response.maxFullscreenExits || maxFullscreenExits}: full-screen mode was exited. Return to full-screen immediately.`,
+          );
+          if (response.autoSubmit && !autoSubmitStarted.current) {
+            autoSubmitStarted.current = true;
+            setFullscreenWarning(
+              "The allowed full-screen exit limit has been reached. Your assessment is being submitted automatically.",
+            );
+            await submitHandlerRef.current(true);
+          }
+        } else {
+          setFullscreenWarning(
+            response.message ||
+              "Full-screen exit could not be recorded. Re-enter full-screen and contact your instructor if this continues.",
+          );
+        }
+      } catch {
+        setFullscreenWarning(
+          "Full-screen exit could not be recorded because the server is unavailable. Return to full-screen and check your connection.",
+        );
+      } finally {
+        exitRequestInFlight.current = false;
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [
+    fullscreenRequired,
+    testId,
+    rollNumber,
+    section,
+    sessionId,
+    maxFullscreenExits,
+  ]);
+
+  const returnToFullscreen = async () => {
+    if (!fullscreenRequired || returningFullscreen) return;
+    setReturningFullscreen(true);
+    try {
+      if (!document.documentElement.requestFullscreen) {
+        setFullscreenWarning(
+          "Full-screen mode is not supported by this browser. Please use the latest Chrome, Edge, or Firefox on a desktop or laptop.",
+        );
+        return;
+      }
+      await document.documentElement.requestFullscreen();
+      if (!document.fullscreenElement)
+        setFullscreenWarning(
+          "Full-screen mode could not be restored. Use the browser's full-screen permission and try again.",
+        );
+    } catch {
+      setFullscreenWarning(
+        "Select the button again to restore full-screen mode, or use a supported desktop browser.",
+      );
+    } finally {
+      setReturningFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (secondsRemaining !== 0 || autoSubmitStarted.current || submitting)
+      return;
     autoSubmitStarted.current = true;
-    void handleSubmit();
+    void handleSubmit(true);
   }, [secondsRemaining, submitting]);
 
   const progressPercentage =
-    questions.length > 0
-      ? ((currentIndex + 1) /
-          questions.length) *
-        100
-      : 0;
+    questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
 
   const answeredPercentage =
-    questions.length > 0
-      ? (attempted / questions.length) * 100
-      : 0;
+    questions.length > 0 ? (attempted / questions.length) * 100 : 0;
 
-  const handleSelectOption = (
-    optionKey: string
-  ) => {
+  const handleSelectOption = (optionKey: string) => {
     if (!currentQuestion || submitting) {
       return;
     }
@@ -157,13 +281,8 @@ function TestPage({
   };
 
   const goPrevious = () => {
-    if (
-      currentIndex > 0 &&
-      !submitting
-    ) {
-      setCurrentIndex(
-        (index) => index - 1
-      );
+    if (currentIndex > 0 && !submitting) {
+      setCurrentIndex((index) => index - 1);
 
       window.scrollTo({
         top: 0,
@@ -173,14 +292,8 @@ function TestPage({
   };
 
   const goNext = () => {
-    if (
-      currentIndex <
-        questions.length - 1 &&
-      !submitting
-    ) {
-      setCurrentIndex(
-        (index) => index + 1
-      );
+    if (currentIndex < questions.length - 1 && !submitting) {
+      setCurrentIndex((index) => index + 1);
 
       window.scrollTo({
         top: 0,
@@ -189,9 +302,7 @@ function TestPage({
     }
   };
 
-  const goToQuestion = (
-    index: number
-  ) => {
+  const goToQuestion = (index: number) => {
     if (submitting) {
       return;
     }
@@ -218,57 +329,47 @@ function TestPage({
     setShowSubmitModal(false);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (automatic = false) => {
     if (submitting) {
       return;
     }
 
     setSubmitting(true);
     setSubmitError("");
+    if (automatic) setShowSubmitModal(false);
 
     try {
-      const submission: StudentAnswer[] =
-        questions.map((question) => ({
-          questionId: question.id,
-          selectedOption:
-            answers[question.id] || "",
-        }));
+      const submission: StudentAnswer[] = questions.map((question) => ({
+        questionId: question.id,
+        selectedOption: answers[question.id] || "",
+      }));
 
-      await onSubmit(submission);
+      await onSubmit(submission, automatic);
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to submit the test.";
+        error instanceof Error ? error.message : "Unable to submit the test.";
 
       setSubmitError(message);
     } finally {
       setSubmitting(false);
     }
   };
+  submitHandlerRef.current = handleSubmit;
 
   if (!currentQuestion) {
     return (
       <div className="premium-test-page">
         <div className="premium-test-empty">
           <div className="premium-empty-icon">
-            <FileCheck2
-              size={26}
-              strokeWidth={1.4}
-            />
+            <FileCheck2 size={26} strokeWidth={1.4} />
           </div>
 
-          <span>
-            ASSESSMENT ERROR
-          </span>
+          <span>ASSESSMENT ERROR</span>
 
-          <h2>
-            No Questions Available
-          </h2>
+          <h2>No Questions Available</h2>
 
           <p>
-            The assessment questions could not
-            be loaded. Please contact the
+            The assessment questions could not be loaded. Please contact the
             administrator.
           </p>
         </div>
@@ -278,15 +379,37 @@ function TestPage({
 
   return (
     <div className="premium-test-page">
+      {fullscreenWarning && (
+        <div className="fullscreen-exit-warning" role="alert">
+          <div>
+            <strong>Full-screen warning</strong>
+            <p>{fullscreenWarning}</p>
+            {fullscreenRequired &&
+              !document.fullscreenElement &&
+              !submitting && (
+                <small>
+                  Recorded exits: {fullscreenExitCount} / {maxFullscreenExits}
+                </small>
+              )}
+          </div>
+          {fullscreenRequired && !document.fullscreenElement && !submitting && (
+            <button
+              type="button"
+              onClick={returnToFullscreen}
+              disabled={returningFullscreen}
+            >
+              {returningFullscreen ? "Restoring…" : "Return to full-screen"}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* =================================================
           HEADER
       ================================================== */}
 
       <header className="premium-test-header">
-
         <div className="premium-test-brand">
-
           <div className="premium-test-brand-mark">
             <span />
             <span />
@@ -294,55 +417,40 @@ function TestPage({
           </div>
 
           <div>
-            <span className="premium-test-brand-small">
-              ONLINE ASSESSMENT
-            </span>
+            <span className="premium-test-brand-small">ONLINE ASSESSMENT</span>
 
-            <strong>
-              {testName}
-            </strong>
+            <strong>{testName}</strong>
 
-            {subject && (
-              <span className="premium-test-subject">
-                {subject}
-              </span>
-            )}
+            {subject && <span className="premium-test-subject">{subject}</span>}
           </div>
-
         </div>
 
-        <div className={`exam-timer ${secondsRemaining !== null && secondsRemaining <= 300 ? "is-warning" : ""}`} aria-live="polite">
+        <div
+          className={`exam-timer ${secondsRemaining !== null && secondsRemaining <= 300 ? "is-warning" : ""}`}
+          aria-live="polite"
+        >
           <Clock3 size={17} />
           <span>TIME LEFT</span>
-          <strong>{secondsRemaining === null ? "--:--" : formatTime(secondsRemaining)}</strong>
+          <strong>
+            {secondsRemaining === null ? "--:--" : formatTime(secondsRemaining)}
+          </strong>
         </div>
 
         <div className="premium-test-student">
-
           <div>
-            <span>
-              ROLL NUMBER
-            </span>
+            <span>ROLL NUMBER</span>
 
-            <strong>
-              {rollNumber}
-            </strong>
+            <strong>{rollNumber}</strong>
           </div>
 
           <div className="premium-test-student-divider" />
 
           <div>
-            <span>
-              SECTION
-            </span>
+            <span>SECTION</span>
 
-            <strong>
-              {section}
-            </strong>
+            <strong>{section}</strong>
           </div>
-
         </div>
-
       </header>
 
       {/* =================================================
@@ -350,53 +458,32 @@ function TestPage({
       ================================================== */}
 
       <main className="premium-test-main">
-
         {/* =================================================
             LEFT / QUESTION
         ================================================== */}
 
         <section className="premium-test-question-column">
-
           {/* Progress header */}
 
           <div className="premium-test-progress">
-
             <div className="premium-progress-meta">
-
               <div>
-                <span>
-                  QUESTION
-                </span>
+                <span>QUESTION</span>
 
                 <strong>
-                  {String(
-                    currentIndex + 1
-                  ).padStart(2, "0")}
-                  <em>
-                    {" "}
-                    /{" "}
-                    {String(
-                      questions.length
-                    ).padStart(2, "0")}
-                  </em>
+                  {String(currentIndex + 1).padStart(2, "0")}
+                  <em> / {String(questions.length).padStart(2, "0")}</em>
                 </strong>
               </div>
 
               <div className="premium-progress-answered">
-                <span>
-                  ANSWERED
-                </span>
+                <span>ANSWERED</span>
 
                 <strong>
                   {attempted}
-                  <em>
-                    {" "}
-                    /{" "}
-                    {questions.length}
-                  </em>
+                  <em> / {questions.length}</em>
                 </strong>
               </div>
-
             </div>
 
             <div className="premium-progress-track">
@@ -414,161 +501,111 @@ function TestPage({
                 }}
               />
             </div>
-
           </div>
 
           {/* Question */}
 
           <article className="premium-question-card">
-
             <div className="premium-question-top">
-
               <div className="premium-question-index">
-                <span>
-                  QUESTION
-                </span>
+                <span>QUESTION</span>
 
-                <strong>
-                  {String(
-                    currentIndex + 1
-                  ).padStart(2, "0")}
-                </strong>
+                <strong>{String(currentIndex + 1).padStart(2, "0")}</strong>
               </div>
 
               <div className="exam-question-actions">
-                <button type="button" className={`exam-review-toggle ${markedForReview[currentQuestion.id] ? "is-marked" : ""}`} onClick={toggleCurrentReview} disabled={submitting} aria-pressed={Boolean(markedForReview[currentQuestion.id])}>
+                <button
+                  type="button"
+                  className={`exam-review-toggle ${markedForReview[currentQuestion.id] ? "is-marked" : ""}`}
+                  onClick={toggleCurrentReview}
+                  disabled={submitting}
+                  aria-pressed={Boolean(markedForReview[currentQuestion.id])}
+                >
                   <Bookmark size={15} />
-                  {markedForReview[currentQuestion.id] ? "Marked for review" : "Mark for review"}
+                  {markedForReview[currentQuestion.id]
+                    ? "Marked for review"
+                    : "Mark for review"}
                 </button>
-                <button type="button" className="exam-clear-answer" onClick={clearCurrentResponse} disabled={!answers[currentQuestion.id] || submitting}>
+                <button
+                  type="button"
+                  className="exam-clear-answer"
+                  onClick={clearCurrentResponse}
+                  disabled={!answers[currentQuestion.id] || submitting}
+                >
                   <RotateCcw size={14} /> Clear response
                 </button>
               </div>
 
               <div className="premium-question-marks">
-                {marksPerQuestion}{" "}
-                {marksPerQuestion === 1
-                  ? "MARK"
-                  : "MARKS"}
+                {marksPerQuestion} {marksPerQuestion === 1 ? "MARK" : "MARKS"}
               </div>
-
             </div>
 
             <div className="premium-question-body">
+              <h1>{currentQuestion.question}</h1>
 
-              <h1>
-                {currentQuestion.question}
-              </h1>
-
-              <p className="premium-select-label">
-                SELECT ONE ANSWER
-              </p>
+              <p className="premium-select-label">SELECT ONE ANSWER</p>
 
               <div className="premium-options">
+                {currentQuestion.options.map((option, index) => {
+                  const selected = answers[currentQuestion.id] === option.key;
 
-                {currentQuestion.options.map(
-                  (option, index) => {
-                    const selected =
-                      answers[
-                        currentQuestion.id
-                      ] === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`premium-option ${selected ? "selected" : ""}`}
+                      onClick={() => handleSelectOption(option.key)}
+                      disabled={submitting}
+                    >
+                      <span className="premium-option-number">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
 
-                    return (
-                      <button
-                        key={option.key}
-                        type="button"
-                        className={`premium-option ${
-                          selected
-                            ? "selected"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          handleSelectOption(
-                            option.key
-                          )
-                        }
-                        disabled={submitting}
-                      >
+                      <span className="premium-option-key">{option.key}</span>
 
-                        <span className="premium-option-number">
-                          {String(
-                            index + 1
-                          ).padStart(2, "0")}
-                        </span>
+                      <span className="premium-option-text">{option.text}</span>
 
-                        <span className="premium-option-key">
-                          {option.key}
-                        </span>
-
-                        <span className="premium-option-text">
-                          {option.text}
-                        </span>
-
-                        <span className="premium-option-indicator">
-                          {selected ? (
-                            <Check
-                              size={17}
-                              strokeWidth={2}
-                            />
-                          ) : null}
-                        </span>
-
-                      </button>
-                    );
-                  }
-                )}
-
+                      <span className="premium-option-indicator">
+                        {selected ? <Check size={17} strokeWidth={2} /> : null}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-
             </div>
-
           </article>
 
           {/* Navigation */}
 
           <div className="premium-question-navigation">
-
             <button
               type="button"
               className="premium-nav-back"
               onClick={goPrevious}
-              disabled={
-                currentIndex === 0 ||
-                submitting
-              }
+              disabled={currentIndex === 0 || submitting}
             >
-              <ChevronLeft
-                size={17}
-              />
+              <ChevronLeft size={17} />
 
-              <span>
-                Previous
-              </span>
+              <span>Previous</span>
             </button>
 
             <div className="premium-nav-position">
               {currentIndex + 1}
-              <span>
-                /
-              </span>
+              <span>/</span>
               {questions.length}
             </div>
 
-            {currentIndex <
-            questions.length - 1 ? (
+            {currentIndex < questions.length - 1 ? (
               <button
                 type="button"
                 className="premium-nav-next"
                 onClick={goNext}
                 disabled={submitting}
               >
-                <span>
-                  Save & Next
-                </span>
+                <span>Save & Next</span>
 
-                <ChevronRight
-                  size={17}
-                />
+                <ChevronRight size={17} />
               </button>
             ) : (
               <button
@@ -577,18 +614,12 @@ function TestPage({
                 onClick={openSubmitModal}
                 disabled={submitting}
               >
-                <span>
-                  Submit Assessment
-                </span>
+                <span>Submit Assessment</span>
 
-                <ArrowRight
-                  size={17}
-                />
+                <ArrowRight size={17} />
               </button>
             )}
-
           </div>
-
         </section>
 
         {/* =================================================
@@ -596,46 +627,28 @@ function TestPage({
         ================================================== */}
 
         <aside className="premium-test-sidebar">
-
           <div className="premium-navigator">
-
             <div className="premium-navigator-heading">
-
               <div>
-                <span>
-                  NAVIGATION
-                </span>
+                <span>NAVIGATION</span>
 
-                <h2>
-                  Questions
-                </h2>
+                <h2>Questions</h2>
               </div>
 
               <div className="premium-navigator-count">
                 {attempted}
-                <span>
-                  /
-                </span>
+                <span>/</span>
                 {questions.length}
               </div>
-
             </div>
 
             {/* completion */}
 
             <div className="premium-completion">
-
               <div className="premium-completion-top">
-                <span>
-                  COMPLETION
-                </span>
+                <span>COMPLETION</span>
 
-                <strong>
-                  {Math.round(
-                    answeredPercentage
-                  )}
-                  %
-                </strong>
+                <strong>{Math.round(answeredPercentage)}%</strong>
               </div>
 
               <div className="premium-completion-track">
@@ -645,62 +658,40 @@ function TestPage({
                   }}
                 />
               </div>
-
             </div>
 
             {/* Question grid */}
 
             <div className="premium-question-grid">
+              {questions.map((question, index) => {
+                const answered = Boolean(answers[question.id]);
 
-              {questions.map(
-                (question, index) => {
-                  const answered =
-                    Boolean(
-                      answers[
-                        question.id
-                      ]
-                    );
+                const current = index === currentIndex;
 
-                  const current =
-                    index === currentIndex;
-
-                  return (
-                    <button
-                      key={question.id}
-                      type="button"
-                      className={[
-                        "premium-question-number",
-                        answered
-                          ? "answered"
-                          : "",
-                        markedForReview[question.id]
-                          ? "review-marked"
-                          : "",
-                        current
-                          ? "current"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() =>
-                        goToQuestion(index)
-                      }
-                      disabled={submitting}
-                    >
-                      {String(
-                        index + 1
-                      ).padStart(2, "0")}
-                    </button>
-                  );
-                }
-              )}
-
+                return (
+                  <button
+                    key={question.id}
+                    type="button"
+                    className={[
+                      "premium-question-number",
+                      answered ? "answered" : "",
+                      markedForReview[question.id] ? "review-marked" : "",
+                      current ? "current" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => goToQuestion(index)}
+                    disabled={submitting}
+                  >
+                    {String(index + 1).padStart(2, "0")}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Legend */}
 
             <div className="premium-navigator-legend">
-
               <div>
                 <span className="legend-current" />
                 Current
@@ -720,64 +711,37 @@ function TestPage({
                 <span className="legend-review" />
                 Marked for review ({reviewCount})
               </div>
-
             </div>
 
             {/* Summary */}
 
             <div className="premium-navigator-summary">
-
               <div>
-                <span>
-                  ATTEMPTED
-                </span>
+                <span>ATTEMPTED</span>
 
-                <strong>
-                  {attempted}
-                </strong>
+                <strong>{attempted}</strong>
               </div>
 
               <div>
-                <span>
-                  REMAINING
-                </span>
+                <span>REMAINING</span>
 
-                <strong>
-                  {unanswered}
-                </strong>
+                <strong>{unanswered}</strong>
               </div>
 
               <div>
-                <span>
-                  MAX MARKS
-                </span>
+                <span>MAX MARKS</span>
 
-                <strong>
-                  {questions.length *
-                    marksPerQuestion}
-                </strong>
+                <strong>{questions.length * marksPerQuestion}</strong>
               </div>
-
             </div>
 
             <div className="premium-secure-note">
+              <ShieldCheck size={16} strokeWidth={1.5} />
 
-              <ShieldCheck
-                size={16}
-                strokeWidth={1.5}
-              />
-
-              <span>
-                Answers are securely recorded
-                on submission.
-              </span>
-
+              <span>Answers are securely recorded on submission.</span>
             </div>
-
           </div>
-
         </aside>
-
       </main>
 
       {/* =================================================
@@ -785,154 +749,102 @@ function TestPage({
       ================================================== */}
 
       {showSubmitModal && (
-        <div
-          className="premium-submit-overlay"
-          role="dialog"
-          aria-modal="true"
-        >
-
+        <div className="premium-submit-overlay" role="dialog" aria-modal="true">
           <div className="premium-submit-modal">
-
             <div className="premium-submit-icon">
-              <CircleHelp
-                size={26}
-                strokeWidth={1.3}
-              />
+              <CircleHelp size={26} strokeWidth={1.3} />
             </div>
 
-            <span className="premium-submit-overline">
-              FINAL CONFIRMATION
-            </span>
+            <span className="premium-submit-overline">FINAL CONFIRMATION</span>
 
-            <h2>
-              Submit assessment?
-            </h2>
+            <h2>Submit assessment?</h2>
 
             <p>
-              Please review your answers before
-              continuing. Once submitted, your
-              assessment will be recorded and
-              cannot be attempted again.
+              Please review your answers before continuing. Once submitted, your
+              assessment will be recorded and cannot be attempted again.
             </p>
 
             <div className="premium-submit-summary">
-
               <div>
-                <span>
-                  QUESTIONS
-                </span>
+                <span>QUESTIONS</span>
 
-                <strong>
-                  {questions.length}
-                </strong>
+                <strong>{questions.length}</strong>
               </div>
 
               <div>
-                <span>
-                  ANSWERED
-                </span>
+                <span>ANSWERED</span>
 
-                <strong>
-                  {attempted}
-                </strong>
+                <strong>{attempted}</strong>
               </div>
 
               <div>
-                <span>
-                  UNANSWERED
-                </span>
+                <span>UNANSWERED</span>
 
-                <strong>
-                  {unanswered}
-                </strong>
+                <strong>{unanswered}</strong>
               </div>
 
               <div>
-                <span>
-                  REVIEW
-                </span>
+                <span>REVIEW</span>
 
-                <strong>
-                  {reviewCount}
-                </strong>
+                <strong>{reviewCount}</strong>
               </div>
-
             </div>
 
             {unanswered > 0 && (
               <div className="premium-submit-warning">
                 <strong>
                   {unanswered}{" "}
-                  {unanswered === 1
-                    ? "question remains"
-                    : "questions remain"}{" "}
+                  {unanswered === 1 ? "question remains" : "questions remain"}{" "}
                   unanswered.
                 </strong>
 
                 <span>
-                  You may return and review
-                  your answers before submitting.
+                  You may return and review your answers before submitting.
                 </span>
               </div>
             )}
 
             {submitError && (
               <div className="premium-submit-error">
-                <strong>
-                  Submission failed
-                </strong>
+                <strong>Submission failed</strong>
 
-                <span>
-                  {submitError}
-                </span>
+                <span>{submitError}</span>
               </div>
             )}
 
             <div className="premium-submit-actions">
-
               <button
                 type="button"
                 className="premium-review-button"
                 onClick={closeSubmitModal}
                 disabled={submitting}
               >
-                <ArrowLeft
-                  size={16}
-                />
-
+                <ArrowLeft size={16} />
                 Review Answers
               </button>
 
               <button
                 type="button"
                 className="premium-confirm-button"
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit()}
                 disabled={submitting}
               >
                 {submitting ? (
                   <>
                     <span className="premium-button-spinner" />
-
                     Submitting...
                   </>
                 ) : (
                   <>
                     Confirm Submission
-
-                    <ArrowRight
-                      size={16}
-                    />
+                    <ArrowRight size={16} />
                   </>
                 )}
               </button>
-
             </div>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }

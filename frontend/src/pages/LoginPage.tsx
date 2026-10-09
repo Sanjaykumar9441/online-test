@@ -12,6 +12,7 @@ import {
   validateStudent,
   type AvailableTest,
 } from "../services/api";
+import { detectDeviceType, type DeviceType } from "../services/device";
 
 interface LoginPageProps {
   onLogin: (
@@ -66,6 +67,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [testId, setTestId] = useState("");
   const [sections, setSections] = useState<string[]>([]);
   const [loadingPage, setLoadingPage] = useState(true);
+  const [deviceType, setDeviceType] = useState<DeviceType>(() =>
+    detectDeviceType(),
+  );
+  useEffect(() => {
+    const update = () => setDeviceType(detectDeviceType());
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -100,12 +113,21 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   }, []);
   const selected = tests.find((test) => test.testId === testId);
   const status = selected ? statusCopy(selected) : null;
+  const deviceBlocked = Boolean(
+    selected?.fullscreenRequired && deviceType !== "desktop",
+  );
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loading) return;
     setError("");
     if (!selected) {
       setError("Select an assessment.");
+      return;
+    }
+    if (deviceBlocked) {
+      setError(
+        "This examination requires a desktop or laptop in full-screen mode.",
+      );
       return;
     }
     if (!selected.canStart || selected.status !== "OPEN") {
@@ -120,7 +142,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     }
     setLoading(true);
     try {
-      const validation = await validateStudent(roll, sec, selected.testId);
+      const validation = await validateStudent(
+        roll,
+        sec,
+        selected.testId,
+        deviceType,
+      );
       if (!validation.success)
         throw new Error(validation.message || "Student verification failed.");
       if (validation.alreadySubmitted)
@@ -244,6 +271,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 </div>
               </div>
             )}
+            {deviceBlocked && (
+              <div className="fullscreen-device-block" role="alert">
+                <strong>Desktop or laptop required</strong>
+                <p>
+                  This examination requires a desktop or laptop in full-screen
+                  mode.
+                </p>
+              </div>
+            )}
             <div className="luxury-field">
               <label htmlFor="rollNumber">
                 <span>Roll Number</span>
@@ -305,15 +341,21 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               type="submit"
               className="luxury-submit"
               disabled={
-                loading || loadingPage || !selected || !selected.canStart
+                loading ||
+                loadingPage ||
+                !selected ||
+                !selected.canStart ||
+                deviceBlocked
               }
             >
               <span>
                 {loading
                   ? "VERIFYING ACCESS"
-                  : !selected?.canStart
-                    ? "ASSESSMENT NOT OPEN"
-                    : "CONTINUE TO ASSESSMENT"}
+                  : deviceBlocked
+                    ? "DESKTOP / LAPTOP REQUIRED"
+                    : !selected?.canStart
+                      ? "ASSESSMENT NOT OPEN"
+                      : "CONTINUE TO ASSESSMENT"}
               </span>
               {loading ? (
                 <Loader2 size={18} className="luxury-spinner" />

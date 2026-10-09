@@ -9325,3 +9325,20 @@ button {
 .result-release-notice p{margin:0;color:#64748b;font-size:14px;line-height:1.7}
 .premium-result-finish{display:flex;align-items:center;justify-content:center;gap:10px;margin:24px auto;padding:13px 20px;border:0;border-radius:8px;background:#263955;color:#fff;font-weight:700;cursor:pointer}
 @media(max-width:640px){.assessment-status{padding:12px}.result-release-notice{padding:18px;gap:12px}.result-release-notice h2{font-size:18px}}
+
+
+/* Full-screen examination policy */
+.fullscreen-device-block, .fullscreen-exit-warning {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  border: 1px solid #f1c56b; background: #fff8e8; color: #563d0d;
+  border-radius: 12px; padding: 16px 18px; margin: 16px 0;
+  box-shadow: 0 8px 24px rgba(31, 41, 55, 0.05);
+}
+.fullscreen-device-block { display: block; }
+.fullscreen-device-block strong, .fullscreen-exit-warning strong { display: block; font-weight: 700; margin-bottom: 5px; }
+.fullscreen-device-block p, .fullscreen-exit-warning p { margin: 0; line-height: 1.5; }
+.fullscreen-exit-warning { position: sticky; top: 8px; z-index: 1000; align-items: center; }
+.fullscreen-exit-warning small { display: block; margin-top: 8px; }
+.fullscreen-exit-warning button { flex: 0 0 auto; border: 0; border-radius: 8px; padding: 10px 14px; background: #263650; color: white; font-weight: 650; cursor: pointer; }
+.fullscreen-exit-warning button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 640px) { .fullscreen-exit-warning { flex-direction: column; align-items: stretch; } .fullscreen-exit-warning button { width: 100%; } }

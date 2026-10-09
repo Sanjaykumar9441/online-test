@@ -11,6 +11,8 @@ export interface AvailableTest {
   durationMinutes: number;
   status: "UPCOMING" | "OPEN" | "CLOSED" | "PAUSED" | "SCHEDULE_ERROR" | string;
   canStart: boolean;
+  fullscreenRequired: boolean;
+  maxFullscreenExits: number;
 }
 export interface TestsResponse {
   success: boolean;
@@ -36,6 +38,8 @@ export interface StartTestResponse {
   expiresAt?: string;
   attemptStartedAt?: string;
   sessionId?: string;
+  fullscreenRequired?: boolean;
+  maxFullscreenExits?: number;
   questions?: TestQuestion[];
 }
 export interface SubmitAnswer {
@@ -61,6 +65,8 @@ export interface TestConfigResponse {
   allowRetest?: boolean;
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
+  fullscreenRequired?: boolean;
+  maxFullscreenExits?: number;
   testStatus?: string;
   status?: string;
   startTime?: string | null;
@@ -107,12 +113,14 @@ export const validateStudent = (
   rollNumber: string,
   section: string,
   testId?: string,
+  deviceType = "unknown",
 ) =>
   apiRequest<StudentValidationResponse>({
     action: "validateStudent",
     rollNumber,
     section,
     ...(testId ? { testId } : {}),
+    deviceType,
   });
 export const startTest = (
   rollNumber: string,
@@ -120,6 +128,8 @@ export const startTest = (
   testId?: string,
   sessionId?: string,
   deviceInfo?: string,
+  fullscreenEntered = false,
+  deviceType = "unknown",
 ) =>
   apiRequest<StartTestResponse>({
     action: "startTest",
@@ -128,6 +138,8 @@ export const startTest = (
     ...(testId ? { testId } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(deviceInfo ? { deviceInfo } : {}),
+    fullscreenEntered,
+    deviceType,
   });
 export const submitTest = (
   rollNumber: string,
@@ -135,6 +147,7 @@ export const submitTest = (
   answers: SubmitAnswer[],
   testId?: string,
   sessionId?: string,
+  autoSubmit = false,
 ) =>
   apiRequest<SubmitTestResponse>({
     action: "submitTest",
@@ -143,6 +156,7 @@ export const submitTest = (
     answers,
     ...(testId ? { testId } : {}),
     ...(sessionId ? { sessionId } : {}),
+    autoSubmit,
   });
 
 export const sendAuditEvent = (payload: {
@@ -151,4 +165,21 @@ export const sendAuditEvent = (payload: {
   section: string;
   event: string;
   detail?: string;
+  sessionId?: string;
+  deviceType?: string;
 }) => apiRequest<{ success: boolean }>({ action: "auditEvent", ...payload });
+export interface FullscreenExitResponse {
+  success: boolean;
+  message?: string;
+  exitCount?: number;
+  maxFullscreenExits?: number;
+  autoSubmit?: boolean;
+}
+export const registerFullscreenExit = (payload: {
+  testId: string;
+  rollNumber: string;
+  section: string;
+  sessionId: string;
+  deviceType: string;
+}) =>
+  apiRequest<FullscreenExitResponse>({ action: "fullscreenExit", ...payload });
