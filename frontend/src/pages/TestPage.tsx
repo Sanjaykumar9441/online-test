@@ -1,6 +1,9 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Bookmark,
+  Clock3,
+  RotateCcw,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -8,8 +11,9 @@ import {
   FileCheck2,
   ShieldCheck,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { sendAuditEvent } from "../services/api";
 import type {
   StudentAnswer,
   TestQuestion,
@@ -18,20 +22,24 @@ import type {
 interface TestPageProps {
   rollNumber: string;
   section: string;
+  testId: string;
   testName: string;
   subject: string;
   questions: TestQuestion[];
   marksPerQuestion: number;
+  expiresAt?: string;
   onSubmit: (answers: StudentAnswer[]) => Promise<void>;
 }
 
 function TestPage({
   rollNumber,
   section,
+  testId,
   testName,
   subject,
   questions,
   marksPerQuestion,
+  expiresAt,
   onSubmit,
 }: TestPageProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -39,6 +47,12 @@ function TestPage({
   const [answers, setAnswers] = useState<
     Record<string, string>
   >({});
+
+  const [markedForReview, setMarkedForReview] =
+    useState<Record<string, boolean>>({});
+
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const autoSubmitStarted = useRef(false);
 
   const [showSubmitModal, setShowSubmitModal] =
     useState(false);
@@ -62,6 +76,44 @@ function TestPage({
   const unanswered =
     questions.length - attempted;
 
+  const reviewCount = questions.filter((question) => markedForReview[question.id]).length;
+
+  const formatTime = (totalSeconds: number) => {
+    const safe = Math.max(0, totalSeconds);
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const seconds = safe % 60;
+    return hours > 0
+      ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+      : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const updateRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000));
+      setSecondsRemaining(remaining);
+    };
+    updateRemaining();
+    const intervalId = window.setInterval(updateRemaining, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [expiresAt]);
+
+  useEffect(() => {
+    const logVisibility = () => {
+      const event = document.visibilityState === "hidden" ? "TAB_HIDDEN" : "TAB_VISIBLE";
+      void sendAuditEvent({ testId, rollNumber, section, event, detail: "Page visibility changed" }).catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", logVisibility);
+    return () => document.removeEventListener("visibilitychange", logVisibility);
+  }, [testId, rollNumber, section]);
+
+  useEffect(() => {
+    if (secondsRemaining !== 0 || autoSubmitStarted.current || submitting) return;
+    autoSubmitStarted.current = true;
+    void handleSubmit();
+  }, [secondsRemaining, submitting]);
+
   const progressPercentage =
     questions.length > 0
       ? ((currentIndex + 1) /
@@ -84,6 +136,23 @@ function TestPage({
     setAnswers((previous) => ({
       ...previous,
       [currentQuestion.id]: optionKey,
+    }));
+  };
+
+  const clearCurrentResponse = () => {
+    if (!currentQuestion || submitting) return;
+    setAnswers((previous) => {
+      const next = { ...previous };
+      delete next[currentQuestion.id];
+      return next;
+    });
+  };
+
+  const toggleCurrentReview = () => {
+    if (!currentQuestion || submitting) return;
+    setMarkedForReview((previous) => ({
+      ...previous,
+      [currentQuestion.id]: !previous[currentQuestion.id],
     }));
   };
 
@@ -242,6 +311,12 @@ function TestPage({
 
         </div>
 
+        <div className={`exam-timer ${secondsRemaining !== null && secondsRemaining <= 300 ? "is-warning" : ""}`} aria-live="polite">
+          <Clock3 size={17} />
+          <span>TIME LEFT</span>
+          <strong>{secondsRemaining === null ? "--:--" : formatTime(secondsRemaining)}</strong>
+        </div>
+
         <div className="premium-test-student">
 
           <div>
@@ -358,6 +433,16 @@ function TestPage({
                     currentIndex + 1
                   ).padStart(2, "0")}
                 </strong>
+              </div>
+
+              <div className="exam-question-actions">
+                <button type="button" className={`exam-review-toggle ${markedForReview[currentQuestion.id] ? "is-marked" : ""}`} onClick={toggleCurrentReview} disabled={submitting} aria-pressed={Boolean(markedForReview[currentQuestion.id])}>
+                  <Bookmark size={15} />
+                  {markedForReview[currentQuestion.id] ? "Marked for review" : "Mark for review"}
+                </button>
+                <button type="button" className="exam-clear-answer" onClick={clearCurrentResponse} disabled={!answers[currentQuestion.id] || submitting}>
+                  <RotateCcw size={14} /> Clear response
+                </button>
               </div>
 
               <div className="premium-question-marks">
@@ -588,6 +673,9 @@ function TestPage({
                         answered
                           ? "answered"
                           : "",
+                        markedForReview[question.id]
+                          ? "review-marked"
+                          : "",
                         current
                           ? "current"
                           : "",
@@ -626,6 +714,11 @@ function TestPage({
               <div>
                 <span className="legend-unanswered" />
                 Unanswered
+              </div>
+
+              <div>
+                <span className="legend-review" />
+                Marked for review ({reviewCount})
               </div>
 
             </div>
@@ -751,6 +844,16 @@ function TestPage({
 
                 <strong>
                   {unanswered}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  REVIEW
+                </span>
+
+                <strong>
+                  {reviewCount}
                 </strong>
               </div>
 

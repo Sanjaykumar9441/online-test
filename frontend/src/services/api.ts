@@ -1,225 +1,154 @@
-import type {
-  TestQuestion,
-  TestResult,
-} from "../types/test";
-
+import type { TestQuestion, TestResult } from "../types/test";
 const API_URL = "/api/test";
-
-/* =========================================================
-   API TYPES
-   ========================================================= */
-
+export interface AvailableTest {
+  testId: string;
+  testName: string;
+  subject: string;
+  totalQuestions: number;
+  marksPerQuestion: number;
+  startTime: string | null;
+  endTime: string | null;
+  durationMinutes: number;
+  status: "UPCOMING" | "OPEN" | "CLOSED" | "PAUSED" | "SCHEDULE_ERROR" | string;
+  canStart: boolean;
+}
+export interface TestsResponse {
+  success: boolean;
+  message?: string;
+  tests: AvailableTest[];
+}
 export interface StudentValidationResponse {
   success: boolean;
   message: string;
   alreadySubmitted?: boolean;
 }
-
 export interface StartTestResponse {
   success: boolean;
   message?: string;
   alreadySubmitted?: boolean;
   configurationError?: boolean;
-
+  testId?: string;
   testName?: string;
   subject?: string;
   totalQuestions?: number;
   marksPerQuestion?: number;
-
+  durationMinutes?: number;
+  expiresAt?: string;
+  attemptStartedAt?: string;
+  sessionId?: string;
   questions?: TestQuestion[];
 }
-
 export interface SubmitAnswer {
   questionId: string;
   selectedOption: string;
 }
-
 export interface SubmitTestResponse {
   success: boolean;
   message: string;
   alreadySubmitted?: boolean;
+  resultReleased?: boolean;
   result?: TestResult;
 }
-
-export interface AvailableTest {
-  testId: string;
-  testName: string;
-  subject?: string;
-  totalQuestions?: number;
-  marksPerQuestion?: number;
-  startTime?: string | null;
-  endTime?: string | null;
-  durationMinutes?: number;
-  status: string;
-  canStart: boolean;
-}
-
-export interface TestsResponse {
-  success: boolean;
-  message?: string;
-  tests?: AvailableTest[];
-}
-
 export interface TestConfigResponse {
   success: boolean;
   message?: string;
-
+  testId?: string;
   testName?: string;
   subject?: string;
   totalQuestions?: number;
   marksPerQuestion?: number;
-
+  durationMinutes?: number;
   allowRetest?: boolean;
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
   testStatus?: string;
-  testId?: string;
+  status?: string;
   startTime?: string | null;
   endTime?: string | null;
-  durationMinutes?: number;
   questionIds?: string[];
 }
-
 export interface SectionsResponse {
   success: boolean;
   message?: string;
   sections?: string[];
 }
-
-/* =========================================================
-   COMMON API REQUEST
-   ========================================================= */
-
-async function apiRequest<T>(
-  body: Record<string, unknown>
-): Promise<T> {
+async function apiRequest<T>(body: Record<string, unknown>): Promise<T> {
   let response: Response;
-
   try {
     response = await fetch(API_URL, {
       method: "POST",
-
-      // React → Vercel
-      headers: {
-        "Content-Type": "application/json",
-      },
-
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-  } catch (error) {
-    console.error("API connection error:", error);
-
+  } catch {
     throw new Error(
-      "Unable to connect to the test server. Please check your internet connection."
+      "Unable to connect to the test server. Check your internet connection.",
     );
   }
-
-  let data: T & {
-    success?: boolean;
-    message?: string;
-  };
-
+  let data: T & { success?: boolean; message?: string };
   try {
     data = await response.json();
-  } catch (error) {
-    console.error("Invalid API response:", error);
-
-    throw new Error(
-      "The server returned an invalid response."
-    );
+  } catch {
+    throw new Error("The server returned an invalid response.");
   }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message ||
-        `Server error (${response.status}).`
-    );
-  }
-
-  if (data && data.success === false) {
-    throw new Error(
-      data.message ||
-        "The request was unsuccessful."
-    );
-  }
-
+  if (!response.ok || data?.success === false)
+    throw new Error(data?.message || `Request failed (${response.status}).`);
   return data;
 }
-
-/* =========================================================
-   VALIDATE STUDENT
-   ========================================================= */
-
-export async function validateStudent(
+export const getTests = () => apiRequest<TestsResponse>({ action: "getTests" });
+export const getSections = () =>
+  apiRequest<SectionsResponse>({ action: "getSections" });
+export const getTestConfig = (testId?: string) =>
+  apiRequest<TestConfigResponse>({
+    action: "getTestConfig",
+    ...(testId ? { testId } : {}),
+  });
+export const validateStudent = (
   rollNumber: string,
   section: string,
   testId?: string,
-): Promise<StudentValidationResponse> {
-  return apiRequest<StudentValidationResponse>({
+) =>
+  apiRequest<StudentValidationResponse>({
     action: "validateStudent",
     rollNumber,
     section,
     ...(testId ? { testId } : {}),
   });
-}
-
-/* =========================================================
-   GET SECTIONS
-   ========================================================= */
-
-export async function getSections(): Promise<SectionsResponse> {
-  return apiRequest<SectionsResponse>({
-    action: "getSections",
-  });
-}
-
-/* =========================================================
-   GET TEST CONFIG
-   ========================================================= */
-
-export async function getTests(): Promise<TestsResponse> {
-  return apiRequest<TestsResponse>({ action: "getTests" });
-}
-
-export async function getTestConfig(testId?: string): Promise<TestConfigResponse> {
-  return apiRequest<TestConfigResponse>({
-    action: "getTestConfig",
-    ...(testId ? { testId } : {}),
-  });
-}
-
-/* =========================================================
-   START TEST
-   ========================================================= */
-
-export async function startTest(
+export const startTest = (
   rollNumber: string,
   section: string,
   testId?: string,
-): Promise<StartTestResponse> {
-  return apiRequest<StartTestResponse>({
+  sessionId?: string,
+  deviceInfo?: string,
+) =>
+  apiRequest<StartTestResponse>({
     action: "startTest",
     rollNumber,
     section,
     ...(testId ? { testId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(deviceInfo ? { deviceInfo } : {}),
   });
-}
-
-/* =========================================================
-   SUBMIT TEST
-   ========================================================= */
-
-export async function submitTest(
+export const submitTest = (
   rollNumber: string,
   section: string,
   answers: SubmitAnswer[],
   testId?: string,
-): Promise<SubmitTestResponse> {
-  return apiRequest<SubmitTestResponse>({
+  sessionId?: string,
+) =>
+  apiRequest<SubmitTestResponse>({
     action: "submitTest",
     rollNumber,
     section,
     answers,
     ...(testId ? { testId } : {}),
+    ...(sessionId ? { sessionId } : {}),
   });
-}
+
+export const sendAuditEvent = (payload: {
+  testId: string;
+  rollNumber: string;
+  section: string;
+  event: string;
+  detail?: string;
+}) => apiRequest<{ success: boolean }>({ action: "auditEvent", ...payload });

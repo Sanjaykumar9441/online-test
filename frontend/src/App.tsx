@@ -1,318 +1,170 @@
 import { useState } from "react";
-
-import {
-  getTestConfig,
-  startTest,
-  submitTest,
-} from "./services/api";
-
-import type {
-  TestQuestion,
-  TestResult,
-} from "./types/test";
-
+import { getTestConfig, startTest, submitTest } from "./services/api";
+import type { TestQuestion, TestResult } from "./types/test";
 import LoginPage from "./pages/LoginPage";
 import InstructionsPage from "./pages/InstructionsPage";
 import TestPage from "./pages/TestPage";
 import ResultPage from "./pages/ResultPage";
-
 import "./App.css";
 
-type Page =
-  | "login"
-  | "instructions"
-  | "test"
-  | "result";
-
-function App() {
+type Page = "login" | "instructions" | "test" | "result";
+function getSessionId() {
+  const key = "assessment_session_id";
+  let value = sessionStorage.getItem(key);
+  if (!value) {
+    value =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(key, value);
+  }
+  return value;
+}
+export default function App() {
   const [page, setPage] = useState<Page>("login");
-
-  const [rollNumber, setRollNumber] =
-    useState("");
-
-  const [section, setSection] =
-    useState("");
-
-  const [testName, setTestName] =
-    useState("");
-
+  const [rollNumber, setRollNumber] = useState("");
+  const [section, setSection] = useState("");
   const [testId, setTestId] = useState("");
-
-  const [subject, setSubject] =
-    useState("");
-
-  const [totalQuestions, setTotalQuestions] =
-    useState(0);
-
-  const [marksPerQuestion, setMarksPerQuestion] =
-    useState(1);
-
-  const [questions, setQuestions] =
-    useState<TestQuestion[]>([]);
-
-  const [result, setResult] =
-    useState<TestResult | null>(null);
-
-  const [appError, setAppError] =
-    useState("");
-
-  /* =======================================================
-     LOGIN
-     ======================================================= */
-
+  const [testName, setTestName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [totalQuestions, setTotalQuestions] = useState(0);
+  const [marksPerQuestion, setMarksPerQuestion] = useState(1);
+  const [expiresAt, setExpiresAt] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [questions, setQuestions] = useState<TestQuestion[]>([]);
+  const [result, setResult] = useState<TestResult | null>(null);
+  const [appError, setAppError] = useState("");
   const handleLogin = async (
-    studentRollNumber: string,
-    studentSection: string,
-    selectedTestId?: string,
+    roll: string,
+    sec: string,
+    selectedTestId: string,
   ) => {
     setAppError("");
-
-    try {
-      const config = await getTestConfig(selectedTestId);
-
-      if (!config.success) {
-        throw new Error(
-          config.message ||
-            "Unable to load test configuration."
-        );
-      }
-
-      /*
-       * Do not allow students to continue when
-       * the administrator has closed the test.
-       */
-      if (config.testStatus !== "OPEN") {
-        throw new Error(
-          "The test is currently closed."
-        );
-      }
-
-      setTestId(selectedTestId || config.testId || "");
-
-      setRollNumber(
-        studentRollNumber.trim().toUpperCase()
+    const config = await getTestConfig(selectedTestId);
+    if (!config.success)
+      throw new Error(
+        config.message || "Unable to load assessment configuration.",
       );
-
-      setSection(
-        studentSection.trim().toUpperCase()
+    if (config.status !== "OPEN" && config.testStatus !== "OPEN") {
+      const status = config.status || config.testStatus;
+      throw new Error(
+        status === "UPCOMING"
+          ? "This assessment has not started yet."
+          : status === "PAUSED"
+            ? "This assessment is paused."
+            : "This assessment is currently closed.",
       );
-
-      setTestName(config.testName || "");
-
-      setSubject(config.subject || "");
-
-      setTotalQuestions(
-        Number(config.totalQuestions || 0)
-      );
-
-      setMarksPerQuestion(
-        Number(config.marksPerQuestion || 1)
-      );
-
-      setPage("instructions");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to load the test.";
-
-      setAppError(message);
-
-      throw error;
     }
+    setRollNumber(roll);
+    setSection(sec);
+    setTestId(selectedTestId);
+    setTestName(config.testName || "");
+    setSubject(config.subject || "");
+    setTotalQuestions(Number(config.totalQuestions || 0));
+    setMarksPerQuestion(Number(config.marksPerQuestion || 1));
+    setPage("instructions");
   };
-
-  /* =======================================================
-     START TEST
-     ======================================================= */
-
   const handleStartTest = async () => {
     setAppError("");
-
-    try {
-      const response = await startTest(
-        rollNumber,
-        section,
-        testId || undefined,
+    const activeSessionId = getSessionId();
+    setSessionId(activeSessionId);
+    const response = await startTest(
+      rollNumber,
+      section,
+      testId,
+      activeSessionId,
+      navigator.userAgent.slice(0, 250),
+    );
+    if (!response.success)
+      throw new Error(
+        response.message ||
+          (response.alreadySubmitted
+            ? "You have already submitted this assessment."
+            : "Unable to start the assessment."),
       );
-
-      if (!response.success) {
-        if (response.alreadySubmitted) {
-          throw new Error(
-            "You have already submitted this test."
-          );
-        }
-
-        if (response.configurationError) {
-          throw new Error(
-            response.message ||
-              "There is a test configuration error."
-          );
-        }
-
-        throw new Error(
-          response.message ||
-            "Unable to start the test."
-        );
-      }
-
-      if (
-        !response.questions ||
-        response.questions.length === 0
-      ) {
-        throw new Error(
-          "No questions were received from the server."
-        );
-      }
-
-      setTestName(
-        response.testName || testName
-      );
-
-      setSubject(
-        response.subject || subject
-      );
-
-      setTotalQuestions(
-        Number(
-          response.totalQuestions ||
-            response.questions.length
-        )
-      );
-
-      setMarksPerQuestion(
-        Number(
-          response.marksPerQuestion ||
-            marksPerQuestion
-        )
-      );
-
-      setQuestions(response.questions);
-
-      setPage("test");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to start the test.";
-
-      setAppError(message);
-
-      throw error;
-    }
+    if (!response.questions?.length)
+      throw new Error("No questions were received from the server.");
+    setTestName(response.testName || testName);
+    setSubject(response.subject || subject);
+    setTotalQuestions(
+      Number(response.totalQuestions || response.questions.length),
+    );
+    setMarksPerQuestion(Number(response.marksPerQuestion || marksPerQuestion));
+    setExpiresAt(response.expiresAt || "");
+    setQuestions(response.questions);
+    setPage("test");
   };
-
-  /* =======================================================
-     SUBMIT TEST
-     ======================================================= */
-
   const handleSubmit = async (
-    answers: {
-      questionId: string;
-      selectedOption: string;
-    }[]
+    answers: { questionId: string; selectedOption: string }[],
   ) => {
     setAppError("");
-
-    try {
-      const response = await submitTest(
-        rollNumber,
-        section,
-        answers,
-        testId || undefined,
-      );
-
-      if (!response.success) {
-        if (response.alreadySubmitted) {
-          throw new Error(
-            "This test has already been submitted."
-          );
-        }
-
-        throw new Error(
-          response.message ||
-            "Unable to submit the test."
-        );
-      }
-
-      if (!response.result) {
-        throw new Error(
-          "The server did not return the test result."
-        );
-      }
-
-      setResult(response.result);
-
-      setPage("result");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to submit the test.";
-
-      setAppError(message);
-
-      throw error;
-    }
+    const response = await submitTest(
+      rollNumber,
+      section,
+      answers,
+      testId,
+      sessionId || getSessionId(),
+    );
+    if (!response.success)
+      throw new Error(response.message || "Unable to submit the assessment.");
+    const submittedResult = response.result || {
+      rollNumber,
+      section,
+      testName,
+      testId,
+      totalQuestions,
+      resultReleased: Boolean(response.resultReleased),
+    };
+    submittedResult.resultReleased = Boolean(
+      response.resultReleased ?? submittedResult.resultReleased,
+    );
+    setResult(submittedResult);
+    setPage("result");
   };
-
-  /* =======================================================
-     LOGOUT / RETURN
-     ======================================================= */
-
   const handleLogout = () => {
     setPage("login");
-
     setRollNumber("");
     setSection("");
-
-    setTestName("");
     setTestId("");
+    setTestName("");
     setSubject("");
-
     setTotalQuestions(0);
     setMarksPerQuestion(1);
-
+    setExpiresAt("");
+    setSessionId("");
     setQuestions([]);
-
     setResult(null);
-
     setAppError("");
+    sessionStorage.removeItem("assessment_session_id");
   };
-
-  /* =======================================================
-     COMMON ERROR BANNER
-     ======================================================= */
-
-  const errorBanner =
-    appError && page !== "login" ? (
-      <div className="app-error-banner">
-        <span>{appError}</span>
-
-        <button
-          type="button"
-          onClick={() => setAppError("")}
-          aria-label="Close error"
-        >
-          ×
-        </button>
-      </div>
-    ) : null;
-
-  /* =======================================================
-     PAGE ROUTING
-     ======================================================= */
-
   return (
     <>
-      {errorBanner}
-
+      {appError && page !== "login" && (
+        <div className="app-error-banner" role="alert">
+          <span>{appError}</span>
+          <button
+            type="button"
+            onClick={() => setAppError("")}
+            aria-label="Close error"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {page === "login" && (
         <LoginPage
-          onLogin={handleLogin}
+          onLogin={async (roll, sec, id) => {
+            try {
+              await handleLogin(roll, sec, id);
+            } catch (e) {
+              setAppError(
+                e instanceof Error ? e.message : "Unable to continue.",
+              );
+              throw e;
+            }
+          }}
         />
       )}
-
       {page === "instructions" && (
         <InstructionsPage
           rollNumber={rollNumber}
@@ -321,31 +173,33 @@ function App() {
           subject={subject}
           totalQuestions={totalQuestions}
           marksPerQuestion={marksPerQuestion}
-          onStart={handleStartTest}
+          onStart={async () => {
+            try {
+              await handleStartTest();
+            } catch (e) {
+              setAppError(e instanceof Error ? e.message : "Unable to start.");
+              throw e;
+            }
+          }}
           onLogout={handleLogout}
         />
       )}
-
       {page === "test" && (
         <TestPage
           rollNumber={rollNumber}
           section={section}
+          testId={testId}
           testName={testName}
           subject={subject}
           questions={questions}
           marksPerQuestion={marksPerQuestion}
+          expiresAt={expiresAt}
           onSubmit={handleSubmit}
         />
       )}
-
       {page === "result" && result && (
-        <ResultPage
-          result={result}
-          onFinish={handleLogout}
-        />
+        <ResultPage result={result} onFinish={handleLogout} />
       )}
     </>
   );
 }
-
-export default App;

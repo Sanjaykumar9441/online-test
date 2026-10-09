@@ -9280,31 +9280,48 @@ button {
   text-transform: uppercase;
   color: #64748b;
 }
-/* Assessment availability card — clear, accessible status feedback */
-.assessment-status-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin: 2px 0 4px;
-  padding: 14px 15px;
-  border: 1px solid #dfe5ed;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #243247;
+
+/* =========================================================
+   EXAM EXPERIENCE UPGRADE — navigation, review, timer
+   ========================================================= */
+.exam-timer {
+  display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+  padding: 10px 13px; border: 1px solid #dbe2ea; border-radius: 12px;
+  background: #fff; color: #334155;
 }
-.assessment-status-card strong { display: block; font-size: 13px; font-weight: 750; line-height: 1.45; }
-.assessment-status-card p { margin: 3px 0 0; color: #65738a; font-size: 12px; line-height: 1.55; }
-.assessment-status-indicator { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 4px; border-radius: 50%; background: #94a3b8; }
-.assessment-status-card.status-open { background: #f0fdf4; border-color: #bbf7d0; }
-.assessment-status-card.status-open .assessment-status-indicator { background: #16a34a; }
-.assessment-status-card.status-upcoming { background: #fffbeb; border-color: #fde68a; }
-.assessment-status-card.status-upcoming .assessment-status-indicator { background: #d97706; }
-.assessment-status-card.status-paused { background: #fff7ed; border-color: #fed7aa; }
-.assessment-status-card.status-paused .assessment-status-indicator { background: #ea580c; }
-.assessment-status-card.status-closed { background: #fef2f2; border-color: #fecaca; }
-.assessment-status-card.status-closed .assessment-status-indicator { background: #dc2626; }
-.luxury-submit:disabled { cursor: not-allowed; opacity: .55; transform: none; }
-@media (max-width: 640px) {
-  .assessment-status-card { padding: 12px; }
-  .assessment-status-card p { font-size: 11px; }
+.exam-timer > span { font-size: 10px; font-weight: 800; letter-spacing: .1em; color: #64748b; }
+.exam-timer strong { font-variant-numeric: tabular-nums; font-size: 15px; letter-spacing: .04em; color: #0f172a; }
+.exam-timer.is-warning { border-color: #f2c7a8; background: #fff7ed; }
+.exam-timer.is-warning strong { color: #c2410c; }
+.exam-question-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.exam-review-toggle, .exam-clear-answer { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dbe2ea; border-radius: 9px; padding: 8px 10px; background: #fff; color: #475569; font-size: 12px; font-weight: 650; cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+.exam-review-toggle:hover:not(:disabled), .exam-clear-answer:hover:not(:disabled) { border-color: #94a3b8; background: #f8fafc; }
+.exam-review-toggle.is-marked { border-color: #f5c66d; background: #fffbeb; color: #92400e; }
+.exam-review-toggle:disabled, .exam-clear-answer:disabled { opacity: .45; cursor: not-allowed; }
+.premium-question-number.review-marked { border-color: #f59e0b; background: #fffbeb; color: #92400e; box-shadow: inset 0 0 0 1px #f59e0b; }
+.premium-question-number.current.review-marked { border-color: #1e293b; background: #1e293b; color: #fff; box-shadow: inset 0 -3px 0 #f59e0b; }
+.legend-review { display: inline-block; width: 9px; height: 9px; border: 2px solid #f59e0b; background: #fffbeb; border-radius: 3px; }
+@media (max-width: 760px) {
+  .premium-test-header { flex-wrap: wrap; gap: 10px; }
+  .exam-timer { order: 3; width: 100%; justify-content: center; }
+  .exam-question-actions { justify-content: flex-start; margin: 8px 0 12px; }
+  .exam-review-toggle, .exam-clear-answer { min-height: 40px; }
 }
+
+/* Assessment availability and result-release controls */
+.assessment-status{display:flex;gap:12px;align-items:flex-start;padding:15px;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 22px;background:#f8fafc;color:#334155}
+.assessment-status strong{display:block;font-size:13px;font-weight:700;color:#172033;margin-bottom:4px}
+.assessment-status p{margin:0;font-size:12px;line-height:1.6;color:#64748b}
+.assessment-status small{display:block;margin-top:6px;font-size:11px;color:#64748b}
+.assessment-status-dot{flex:0 0 9px;width:9px;height:9px;margin-top:4px;border-radius:50%;background:#94a3b8}
+.assessment-status--open{background:#f0fdf4;border-color:#bbf7d0}.assessment-status--open .assessment-status-dot{background:#16a34a}
+.assessment-status--upcoming{background:#fffbeb;border-color:#fde68a}.assessment-status--upcoming .assessment-status-dot{background:#d97706}
+.assessment-status--paused{background:#fff7ed;border-color:#fed7aa}.assessment-status--paused .assessment-status-dot{background:#ea580c}
+.assessment-status--closed{background:#f8fafc;border-color:#e2e8f0}
+.result-release-notice{display:flex;gap:16px;align-items:flex-start;margin:30px 0;padding:24px;border:1px solid #dbe4ef;border-radius:14px;background:#f8fafc}
+.result-release-icon{display:grid;place-items:center;flex:0 0 46px;height:46px;border-radius:12px;background:#e8eef7;color:#304563}
+.result-release-notice span{font-size:10px;letter-spacing:1.4px;font-weight:800;color:#64748b}
+.result-release-notice h2{margin:7px 0;font-size:20px;color:#172033}
+.result-release-notice p{margin:0;color:#64748b;font-size:14px;line-height:1.7}
+.premium-result-finish{display:flex;align-items:center;justify-content:center;gap:10px;margin:24px auto;padding:13px 20px;border:0;border-radius:8px;background:#263955;color:#fff;font-weight:700;cursor:pointer}
+@media(max-width:640px){.assessment-status{padding:12px}.result-release-notice{padding:18px;gap:12px}.result-release-notice h2{font-size:18px}}
